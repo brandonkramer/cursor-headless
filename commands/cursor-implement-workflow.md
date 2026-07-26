@@ -1,23 +1,24 @@
 ---
 description: >-
   Dev orchestration via cursor-headless workers. Default composer-2.5-fast
-  implement; escalate to Grok 4.5 low/medium/high by difficulty. Codex parent
-  only plans, sequences, and integrates — Cursor Agent does the heavy work.
+  implement; escalate to Grok 4.5 low/medium/high by difficulty. You (this chat)
+  only plan, sequence, and integrate — Cursor Agent does the heavy work.
 argument-hint: [TASK]
 ---
 
 # /cursor-implement-workflow
 
-You are the **orchestrator** (Codex). The user's task follows this command
-(everything after `/cursor-implement-workflow`).
+You are the **orchestrator** (this chat — Claude Code or Codex). The user's task
+follows this command (everything after `/cursor-implement-workflow`).
 
 **Default posture:** delegate as much as possible to **cursor-headless** workers
 (`cursor_ask` / `cursor_plan` / `cursor_implement`). Fan out **multiple** workers
 **in parallel in the same turn**, then keep orchestrating — do not sit idle, and
 do not absorb token-heavy work into your own context.
 
-Requires the **cursor-headless** plugin (MCP tools). If tools are missing, tell
-the user to enable `cursor-headless@cursor-headless` and restart Codex.
+Requires the **cursor-headless** plugin (MCP tools). If tools are missing:
+- **Claude Code:** enable `cursor-headless@cursor-headless-local` and reload plugins
+- **Codex:** enable `cursor-headless@cursor-headless` and restart Codex
 
 ## Worker model routing (required)
 
@@ -42,8 +43,8 @@ in-tree edits.
 
 ## Token efficiency (why this command exists)
 
-Your (Codex parent) context is the scarce, expensive resource. Cursor workers run
-in **their own** context via headless `cursor-agent`.
+Your (parent) context is the scarce, expensive resource. Cursor workers run in
+**their own** context via headless `cursor-agent`.
 
 - **Push tokens down to workers.** Large file reads, exploration, greps, builds,
   and multi-step implementation belong in cursor-headless calls, not the parent.
@@ -111,12 +112,12 @@ Final: parent folds worker results into user summary
 
 - Always picking grok-high — bias composer / low / medium first.
 - Single worker by default — split until slices are independent or sequential.
-- Parent doing heavy work — reading large files or implementing in Codex context.
+- Parent doing heavy work — reading large files or implementing in parent context.
 - Re-reading worker files — trust the worker summary.
 - Serial when parallel works — fire independent `cursor_*` calls together.
 - Re-doing worker output — integrate; don't re-implement from scratch.
 - Skipping cursor-headless for multi-file work — that defeats this command.
-- Using Cursor IDE `/worker-*` Task tool names here — this is Codex; use MCP
+- Using Cursor IDE `/worker-*` Task tool names here — use MCP
   `cursor_ask` / `cursor_plan` / `cursor_implement` only.
 
 Begin: decompose → launch **multiple parallel cursor-headless workers** (routed

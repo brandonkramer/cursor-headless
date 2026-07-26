@@ -12,12 +12,14 @@ Thin MCP tools + skill over `cursor-agent --print` for **Codex** and **Claude Co
 
 Pass `model` explicitly: simple → `composer-2.5` (or `*-fast` / `fast=true` when latency matters); light → `cursor-grok-4.5-low`; medium → `…-medium`; hard → `…-high`.
 
-## Codex slash commands
+## Slash commands (Claude Code + Codex)
+
+Parent chat orchestrates; Cursor workers execute.
 
 | Command | What it does |
 |---------|----------------|
-| `/cursor-implement-workflow` | Codex orchestrates; fans out parallel `cursor_ask` / `cursor_plan` / `cursor_implement` workers |
-| `/cursor-review-loop` | Codex reviews → Cursor workers fix → Codex reviews again (max 5 iterations) |
+| `/cursor-implement-workflow` | You plan/sequence/integrate; fan out parallel `cursor_ask` / `cursor_plan` / `cursor_implement` workers |
+| `/cursor-review-loop` | You review → Cursor workers fix → you review again (max 5 iterations) |
 
 ## Layout
 

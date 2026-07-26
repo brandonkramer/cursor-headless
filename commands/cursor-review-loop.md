@@ -1,24 +1,25 @@
 ---
 description: >-
-  Review→fix loop: Codex (this chat) reviews, cursor-headless workers fix,
-  Codex reviews again until no blocker/major findings remain. Parent owns every
-  review pass; Cursor Agent only implements fixes.
+  Review→fix loop: you (this chat) review, cursor-headless workers fix, you
+  review again until no blocker/major findings remain. Parent owns every review
+  pass; Cursor Agent only implements fixes.
 argument-hint: [SCOPE]
 ---
 
 # /cursor-review-loop
 
-You are the **orchestrator + reviewer** (Codex, **this chat**). Text after
-`/cursor-review-loop` is optional scope.
+You are the **orchestrator + reviewer** (this chat — Claude Code or Codex). Text
+after `/cursor-review-loop` is optional scope.
 
 **Roles (hard split):**
-- **Review** → **you** (the main Codex model in this conversation). Do not
-  delegate the review to Cursor.
+- **Review** → **you** (the main model in this conversation). Do not delegate
+  the review to Cursor.
 - **Fix** → **cursor-headless** workers (`cursor_implement`, optionally
   `cursor_ask` / `cursor_plan` for bounded investigation before a fix).
 
-Requires the **cursor-headless** plugin. If MCP tools are missing, tell the user
-to enable `cursor-headless@cursor-headless` and restart Codex.
+Requires the **cursor-headless** plugin. If MCP tools are missing:
+- **Claude Code:** enable `cursor-headless@cursor-headless-local` and reload plugins
+- **Codex:** enable `cursor-headless@cursor-headless` and restart Codex
 
 For greenfield / multi-slice implementation without a review loop, use
 `/cursor-implement-workflow`.
@@ -46,7 +47,7 @@ Loop until **your** review is clean:
 
 | Role | Who |
 |------|-----|
-| Review | **Codex parent (this chat)** — required each pass |
+| Review | **Parent (this chat)** — required each pass |
 | Fix | `cursor_implement` (+ optional `cursor_ask` / `cursor_plan`) — same routing as `/cursor-implement-workflow` |
 
 Do **not** fix findings inline in the parent except trivial one-liners
@@ -71,7 +72,7 @@ wants in-tree edits.
 ```
 iteration = 1
 LOOP:
-  1. YOU review (Codex parent):
+  1. YOU review (parent chat):
      - Establish scope (prompt or short chat summary)
      - Inspect only what you need for this pass (stay targeted)
      - Produce Verdict + Findings with severity (blocker / major / nit)
@@ -129,12 +130,12 @@ Notes: …
 ## Anti-patterns
 
 - Delegating the review to `cursor_ask` / `cursor_plan` / a Cursor “reviewer”
-  instead of reviewing in this Codex chat.
+  instead of reviewing in this chat.
 - One giant fix worker for unrelated findings when they can parallelize.
 - Looping forever on nits.
 - Always picking grok-high for every fix.
 - Parent implementing the full fix list instead of cursor-headless.
 - Turning this into a greenfield build (use `/cursor-implement-workflow` first).
 
-Begin: establish scope → **Codex review** → fix with cursor-headless workers →
-**Codex review again** → until clean or cap.
+Begin: establish scope → **you review** → fix with cursor-headless workers →
+**you review again** → until clean or cap.

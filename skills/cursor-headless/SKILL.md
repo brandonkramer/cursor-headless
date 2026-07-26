@@ -35,7 +35,8 @@ headless work via `cursor-agent --print`.
 Fallback CLI wrapper: `scripts/cursor_headless.py` (also what the MCP server calls).
 
 Never pass a Fable model to Cursor (`claude-fable-5-*`). Final high-taste review
-can stay on Codex (`gpt-5.6-sol`); use Cursor models below for delegated work.
+stays on the parent (Claude in Claude Code, or Codex / gpt-5.6-sol there); use
+Cursor models below for delegated work.
 
 ## Model routing (Composer vs Grok)
 
