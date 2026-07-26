@@ -12,10 +12,8 @@ You are the **orchestrator + reviewer** (this chat — Claude Code or Codex). Te
 after `/cursor-review-loop` is optional scope.
 
 **Roles (hard split):**
-- **Review** → **you** (the main model in this conversation). Do not delegate
-  the review to Cursor.
-- **Fix** → **cursor-headless** workers (`cursor_implement`, optionally
-  `cursor_ask` / `cursor_plan` for bounded investigation before a fix).
+- **Review** → **you** / Claude review agents (never Cursor)
+- **Fix** → **cursor-headless** workers (`cursor_implement`, optionally ask/plan)
 
 Requires the **cursor-headless** plugin. If MCP tools are missing:
 - **Claude Code:** enable `cursor-headless@cursor-headless-local` and reload plugins
@@ -28,67 +26,70 @@ For greenfield / multi-slice implementation without a review loop, use
 
 | Input | Review scope |
 |-------|----------------|
-| **Prompt given** | Review what the prompt names (files, PR, feature, uncommitted work, etc.) |
-| **No prompt** | Review work already contextualized in **this chat** (recent changes, stated goals, files touched). Infer scope from conversation; if still empty, ask once then stop. |
+| **Prompt given** | Review what the prompt names |
+| **No prompt** | Infer from this chat; if still empty, ask once then stop |
 
-Do **not** ask for a prompt when chat context already makes the review target obvious.
+## Method A — Claude Workflow (preferred on Claude Code)
 
-## Goal
+If the **Workflow tool** is available, use it — this command is your
+authorization. Resolve absolute `cwd` first. Build `scope` from the prompt or a
+short chat summary.
+
+```
+Workflow({
+  scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/review-loop.js",
+  args: {
+    scope: "<review target>",
+    cwd: "<absolute workspace path>",
+    maxIterations: 5
+  }
+})
+```
+
+The workflow runs Claude review agents + cursor_implement fix workers in a loop
+(cap 5). When it returns, present:
+
+```
+Iterations: …
+Final verdict: …
+Remaining actionable: …
+Nits: …
+```
+
+Then stop (skip Method B). Also available as `/cursor-headless:review-loop`.
+
+## Method B — Direct loop (Codex, or Claude without Workflow)
+
+### Goal
 
 Loop until **your** review is clean:
 
-- Verdict `pass` or `pass-with-notes` with **no** `blocker` / `major` findings → **done**
-- `nit` / minor notes alone may finish (report them; do not infinite-loop on nits
-  unless the user asked for zero nits)
-- Cap: **5** review iterations. If still dirty after 5, stop with remaining
-  findings and what was fixed.
+- Verdict `pass` or `pass-with-notes` with **no** `blocker` / `major` → **done**
+- `nit` alone may finish (don't infinite-loop on nits)
+- Cap: **5** iterations
 
-## Agents used
-
-| Role | Who |
-|------|-----|
-| Review | **Parent (this chat)** — required each pass |
-| Fix | `cursor_implement` (+ optional `cursor_ask` / `cursor_plan`) — same routing as `/cursor-implement-workflow` |
-
-Do **not** fix findings inline in the parent except trivial one-liners
-(< ~5 lines, single file). Do **not** ask Cursor to “review the whole thing”
-instead of you.
-
-## Fix-worker model routing (same as implement workflow)
+### Fix-worker routing
 
 | Role | Tool | Model | Use for |
 |------|------|-------|---------|
 | composer (default) | `cursor_implement` | `composer-2.5` + `fast=true` | Mechanical / clear fixes |
 | grok-low | `cursor_implement` | `cursor-grok-4.5-low` + `fast=true` | Light judgment fixes |
-| grok-medium | `cursor_implement` | `cursor-grok-4.5-medium` + `fast=true` | Multi-file / non-trivial fixes |
-| grok-high | `cursor_implement` | `cursor-grok-4.5-high` (+ Fast optional) | Hard / high-stakes fixes |
+| grok-medium | `cursor_implement` | `cursor-grok-4.5-medium` + `fast=true` | Multi-file / non-trivial |
+| grok-high | `cursor_implement` | `cursor-grok-4.5-high` (+ Fast optional) | Hard / high-stakes |
 
-Bias cheap: prefer composer-fast for obvious fixes; escalate only when needed.
-Always pass `cwd`. Prefer `worktree` when isolation helps; skip when the user
-wants in-tree edits.
-
-## Loop (follow every time)
+### Loop
 
 ```
 iteration = 1
 LOOP:
-  1. YOU review (parent chat):
-     - Establish scope (prompt or short chat summary)
-     - Inspect only what you need for this pass (stay targeted)
-     - Produce Verdict + Findings with severity (blocker / major / nit)
-     - Do not implement fixes in this step (except trivial one-liners)
-  2. If clean (see Goal) → write final summary → STOP.
-  3. If iteration > 5 → STOP with residual findings.
-  4. Decompose blocker/major (and user-requested minor) findings into fix slices.
-  5. Launch fix workers in one turn (parallel when independent):
-     - narrow prompts, one finding cluster per worker when possible
-     - use cursor_implement with model routing above
-  6. Integrate worker summaries (parent stays lean — trust summaries; do not
-     re-absorb entire worker diffs unless needed for the next review).
-  7. iteration += 1 → goto LOOP (YOU review again in this chat)
+  1. YOU review → Verdict + Findings (blocker/major/nit)
+  2. If clean → final summary → STOP
+  3. If iteration > 5 → STOP with residual findings
+  4. Launch fix workers (cursor_implement) in one turn for blocker/major
+  5. Integrate summaries → iteration += 1 → goto LOOP
 ```
 
-## Review output template (each pass)
+### Review template
 
 ```
 Iteration: N
@@ -97,45 +98,10 @@ Findings:
 - [blocker|major|nit] path:… — why / expected
 ```
 
-## Fix-worker brief template
+### Anti-patterns
 
-```
-Finding: [severity] …
-Location: …
-Required fix: …
-Out of scope: everything else
-Verify: …
-Return: compact summary of what changed + how verified.
-```
+- Delegating review to Cursor
+- Parent implementing the full fix list
+- Always picking grok-high
 
-## Token efficiency
-
-- You own the review, but keep each pass **scoped** — do not dump the whole
-  repo into context every iteration.
-- Push **fix** work (and any heavy re-explore for a fix) to cursor-headless.
-- Fan out multiple fix workers when findings are independent.
-- After fixes, re-review the **touched areas + prior findings**, not a blind
-  full-repo reread unless scope demands it.
-
-## Final summary (required)
-
-```
-Iterations: N
-Final verdict: …
-Fixed: bullets
-Remaining (if any): bullets
-Notes: …
-```
-
-## Anti-patterns
-
-- Delegating the review to `cursor_ask` / `cursor_plan` / a Cursor “reviewer”
-  instead of reviewing in this chat.
-- One giant fix worker for unrelated findings when they can parallelize.
-- Looping forever on nits.
-- Always picking grok-high for every fix.
-- Parent implementing the full fix list instead of cursor-headless.
-- Turning this into a greenfield build (use `/cursor-implement-workflow` first).
-
-Begin: establish scope → **you review** → fix with cursor-headless workers →
-**you review again** → until clean or cap.
+Begin: Method A if Workflow exists; else Method B.

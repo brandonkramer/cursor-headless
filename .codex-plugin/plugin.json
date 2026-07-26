@@ -1,7 +1,7 @@
 {
   "name": "cursor-headless",
-  "version": "0.2.1",
-  "description": "Delegate to Cursor Agent from Claude Code or Codex via thin MCP tools (ask/plan/implement) wrapping a fast headless CLI path. Includes /cursor-implement-workflow and /cursor-review-loop (parent chat orchestrates).",
+  "version": "0.2.2",
+  "description": "Delegate to Cursor Agent from Claude Code or Codex via MCP (ask/plan/implement). Claude workflows under workflows/; slash commands for both hosts.",
   "license": "MIT",
   "keywords": ["cursor", "cursor-agent", "composer", "grok", "orchestration", "claude"],
   "skills": "./skills/",

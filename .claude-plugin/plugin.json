@@ -1,7 +1,7 @@
 {
   "name": "cursor-headless",
-  "version": "0.2.1",
-  "description": "Delegate to Cursor Agent via thin MCP tools (cursor_ask/plan/implement) or cursor-agent CLI. Composer + Grok routing. Shared with the Codex plugin. Slash commands treat this chat as orchestrator.",
+  "version": "0.2.2",
+  "description": "Delegate to Cursor Agent via MCP (cursor_ask/plan/implement) or CLI. Claude workflows + slash commands; Composer + Grok routing. Shared with Codex.",
   "author": {
     "name": "brandonkramer",
     "url": "https://github.com/brandonkramer/cursor-headless"

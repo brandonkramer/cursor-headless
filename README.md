@@ -21,12 +21,24 @@ Parent chat orchestrates; Cursor workers execute.
 | `/cursor-implement-workflow` | You plan/sequence/integrate; fan out parallel `cursor_ask` / `cursor_plan` / `cursor_implement` workers |
 | `/cursor-review-loop` | You review → Cursor workers fix → you review again (max 5 iterations) |
 
+## Claude workflows (Claude Code only)
+
+Requires Dynamic workflows (Claude Code ≥ 2.1.154; enable in `/config`).
+
+| Workflow | Slash / name | What it does |
+|----------|--------------|--------------|
+| `workflows/implement.js` | `/cursor-headless:implement` or via `/cursor-implement-workflow` | Decompose + fan-out thin Claude wrappers that call `cursor_*` MCP |
+| `workflows/review-loop.js` | `/cursor-headless:review-loop` or via `/cursor-review-loop` | Claude review agents ↔ `cursor_implement` fix workers (max 5) |
+
+Slash commands prefer the Workflow tool when available, and fall back to direct MCP fan-out (same path Codex uses).
+
 ## Layout
 
 - `.codex-plugin/` — Codex plugin manifest + MCP
 - `.claude-plugin/` — Claude Code marketplace + plugin manifest
 - `.mcp.json` — Claude MCP server entry (`uv` → FastMCP)
-- `commands/` — Codex slash commands
+- `commands/` — shared slash commands (Claude + Codex)
+- `workflows/` — Claude Code dynamic workflows (`implement`, `review-loop`)
 - `skills/cursor-headless/` — shared routing skill + CLI wrapper
 - `src/cursor_headless_mcp.py` — FastMCP facade
 - `bin/cursor-headless-mcp` — optional launcher

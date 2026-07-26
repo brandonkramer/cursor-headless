@@ -12,15 +12,48 @@ You are the **orchestrator** (this chat — Claude Code or Codex). The user's ta
 follows this command (everything after `/cursor-implement-workflow`).
 
 **Default posture:** delegate as much as possible to **cursor-headless** workers
-(`cursor_ask` / `cursor_plan` / `cursor_implement`). Fan out **multiple** workers
-**in parallel in the same turn**, then keep orchestrating — do not sit idle, and
-do not absorb token-heavy work into your own context.
+(`cursor_ask` / `cursor_plan` / `cursor_implement`). Keep the parent context lean.
 
 Requires the **cursor-headless** plugin (MCP tools). If tools are missing:
 - **Claude Code:** enable `cursor-headless@cursor-headless-local` and reload plugins
 - **Codex:** enable `cursor-headless@cursor-headless` and restart Codex
 
-## Worker model routing (required)
+## Method A — Claude Workflow (preferred on Claude Code)
+
+If the **Workflow tool** is available in this session, use it — this command
+invocation is your authorization. Resolve `cwd` to the absolute workspace path
+first (usually the project root).
+
+```
+Workflow({
+  scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/implement.js",
+  args: {
+    task: "<full assignment text after the slash command>",
+    cwd: "<absolute workspace path>"
+  }
+})
+```
+
+Optional: pass pre-built `slices: [{goal, tool, model, worktree?, fast?}]` if you
+already decomposed. Otherwise the workflow decomposes, then fans out workers.
+
+Tell the user a short heads-up (workflow fans out multiple agents) before
+launching. When it returns:
+
+1. Integrate `workers[].summary` into the user-facing result
+2. Call out `failedIndexes` / `ok: false` workers
+3. Do **not** re-read whole worker diffs unless needed
+
+Then stop (skip Method B). If Workflow is unavailable, use Method B.
+
+You can also run the bundled workflow directly as `/cursor-headless:implement`
+with the same args shape.
+
+## Method B — Direct MCP fan-out (Codex, or Claude without Workflow)
+
+Fan out **multiple** `cursor_*` MCP calls **in parallel in the same turn**.
+
+### Worker model routing (required)
 
 | Role | Tool | Model | Use for |
 |------|------|-------|---------|
@@ -35,57 +68,17 @@ Requires the **cursor-headless** plugin (MCP tools). If tools are missing:
 - Writes / implementation → `cursor_implement` (`force` defaults true)
 
 **Bias cheap:** prefer `composer-2.5` + `fast=true` unless the slice clearly needs
-Grok judgment. Mix models across parallel workers when useful.
+Grok judgment. Always pass `cwd`. Prefer `worktree` on implement when isolation helps.
 
-Always pass `cwd` to the workspace root (usually `$PWD` / current project). Prefer
-`worktree` on `cursor_implement` when isolation helps; skip when the user wants
-in-tree edits.
-
-## Token efficiency (why this command exists)
-
-Your (parent) context is the scarce, expensive resource. Cursor workers run in
-**their own** context via headless `cursor-agent`.
-
-- **Push tokens down to workers.** Large file reads, exploration, greps, builds,
-  and multi-step implementation belong in cursor-headless calls, not the parent.
-- **Parent stays lean.** Integrate worker return text; do **not** re-read the
-  files they already summarized.
-- **Default to delegating.** If a step would add meaningful tokens to the parent,
-  spawn another worker instead of doing it inline.
-- **Parent never stops being the orchestrator.** Owns planning, decomposition,
-  sequencing, and integration — not the heavy lifting.
-
-## Task
-
-Text after `/cursor-implement-workflow` is the full assignment. If empty, ask
-what they want done.
-
-## Core workflow (follow every time)
+### Core workflow
 
 1. **Decompose** into independent slices (aim for **3+ workers** when possible).
-2. **Pick tool + model** per slice using the routing table.
-3. **Launch workers in one message** — multiple `cursor_*` MCP calls in the
-   **same turn**, each with a **narrow, bounded** prompt.
-4. **Parallel by default** — only serialize when B truly depends on A's output.
-5. **Orchestrate while waiting** — only token-light parent work (sequencing,
-   tiny glue). No broad greps or large reads in the parent.
-6. **Integrate** worker outputs — merge summaries, resolve conflicts, produce
-   the final user-facing summary.
+2. **Pick tool + model** per slice.
+3. **Launch workers in one message** — multiple `cursor_*` calls, narrow prompts.
+4. **Parallel by default** — serialize only when B depends on A.
+5. **Integrate** worker outputs — merge summaries; parent stays lean.
 
-## Parallelism rules
-
-| Situation | Action |
-|-----------|--------|
-| Independent explore/implement/test slices | **Multiple `cursor_*` calls in one turn** |
-| Worker A output required before Worker B | Sequential: A → integrate → B |
-| Trivial change (< ~5 lines, single file) | Do inline yourself |
-| Long research or multi-file implementation | **Always a cursor-headless worker** |
-
-**When in doubt, spawn another `cursor_implement` with `composer-2.5` + `fast=true`.**
-
-## Prompt shape for each worker
-
-Each worker prompt must be self-contained (workers do not see parent history):
+### Prompt shape for each worker
 
 ```text
 Goal: …
@@ -95,31 +88,10 @@ Return: compact structured summary (what changed / findings / open risks).
 Do not: restate the whole codebase; keep the reply short.
 ```
 
-## Decomposition template (required before delegating)
-
-```
-Subtasks:
-- [ ] Worker 1 (cursor_implement|ask|plan, composer-2.5-fast|grok-low|medium|high): …
-- [ ] Worker 2 (…): …
-- [ ] Worker 3 (…): …
-Parallel: yes — launch 1–3 together in one turn
-Orchestrator (while workers run): …
-Integrate after workers: merge summaries, resolve conflicts
-Final: parent folds worker results into user summary
-```
-
-## Anti-patterns
+### Anti-patterns
 
 - Always picking grok-high — bias composer / low / medium first.
-- Single worker by default — split until slices are independent or sequential.
-- Parent doing heavy work — reading large files or implementing in parent context.
-- Re-reading worker files — trust the worker summary.
-- Serial when parallel works — fire independent `cursor_*` calls together.
-- Re-doing worker output — integrate; don't re-implement from scratch.
-- Skipping cursor-headless for multi-file work — that defeats this command.
-- Using Cursor IDE `/worker-*` Task tool names here — use MCP
-  `cursor_ask` / `cursor_plan` / `cursor_implement` only.
+- Parent doing heavy file reads or implementing in parent context.
+- Using Cursor IDE Task tool names — use MCP `cursor_*` only.
 
-Begin: decompose → launch **multiple parallel cursor-headless workers** (routed
-by difficulty) in one turn → **keep the parent context lean** → integrate worker
-summaries into the final response.
+Begin: Method A if Workflow exists; else Method B → integrate worker summaries.

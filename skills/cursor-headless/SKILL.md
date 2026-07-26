@@ -236,11 +236,18 @@ For `json`, default is compact (not pretty). Use `--pretty-json` only when debug
 
 ## Claude Code notes
 
-On Claude Code this plugin loads the same skill + MCP server. Prefer MCP tools
-when available; otherwise use the CLI wrapper / `cursor-agent -p` with the same
-model routing. Label thin wrapper agents `composer:…` or `grok:…`. Escalate
-heavier reasoning to **`codex-implementation`** (codex-headless Claude plugin),
-not a frontier model on the Cursor CLI.
+On Claude Code this plugin loads the same skill + MCP server + `workflows/`.
+Prefer MCP tools when available; otherwise use the CLI wrapper / `cursor-agent -p`
+with the same model routing.
+
+**Workflows** (Dynamic workflows enabled): `/cursor-headless:implement` and
+`/cursor-headless:review-loop`, or slash commands that invoke them via the
+Workflow tool. Scripts coordinate thin Claude agents that must call `cursor_*`
+MCP — the workflow runtime cannot call MCP/shell itself.
+
+Label thin wrapper agents `composer:…` or `grok:…`. Escalate heavier reasoning
+to **`codex-implementation`** (codex-headless Claude plugin), not a frontier
+model on the Cursor CLI.
 
 Replaces the former standalone **`cursor-implementation`** Claude plugin.
 
