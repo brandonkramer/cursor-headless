@@ -18,7 +18,7 @@ Parent chat orchestrates; Cursor workers execute.
 
 | Command | What it does |
 |---------|----------------|
-| `/cursor-implement-workflow` | You plan/sequence/integrate; fan out parallel `cursor_ask` / `cursor_plan` / `cursor_implement` workers |
+| `/cursor-implement` | You plan/sequence/integrate; fan out parallel `cursor_ask` / `cursor_plan` / `cursor_implement` workers |
 | `/cursor-review-loop` | You review → Cursor workers fix → you review again (max 5 iterations) |
 
 ## Claude workflows (Claude Code only)
@@ -27,7 +27,7 @@ Requires Dynamic workflows (Claude Code ≥ 2.1.154; enable in `/config`).
 
 | Workflow | Slash / name | What it does |
 |----------|--------------|--------------|
-| `workflows/implement.js` | `/cursor-headless:implement` or via `/cursor-implement-workflow` | Decompose + fan-out thin Claude wrappers that call `cursor_*` MCP |
+| `workflows/implement.js` | `/cursor-headless:implement` or via `/cursor-implement` | Decompose + fan-out thin Claude wrappers that call `cursor_*` MCP |
 | `workflows/review-loop.js` | `/cursor-headless:review-loop` or via `/cursor-review-loop` | Claude review agents ↔ `cursor_implement` fix workers (max 5) |
 
 Slash commands prefer the Workflow tool when available, and fall back to direct MCP fan-out (same path Codex uses).

@@ -20,7 +20,7 @@ Requires the **cursor-headless** plugin. If MCP tools are missing:
 - **Codex:** enable `cursor-headless@cursor-headless` and restart Codex
 
 For greenfield / multi-slice implementation without a review loop, use
-`/cursor-implement-workflow`.
+`/cursor-implement`.
 
 ## Task / scope
 

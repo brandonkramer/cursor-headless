@@ -6,10 +6,10 @@ description: >-
 argument-hint: [TASK]
 ---
 
-# /cursor-implement-workflow
+# /cursor-implement
 
 You are the **orchestrator** (this chat — Claude Code or Codex). The user's task
-follows this command (everything after `/cursor-implement-workflow`).
+follows this command (everything after `/cursor-implement`).
 
 **Default posture:** delegate as much as possible to **cursor-headless** workers
 (`cursor_ask` / `cursor_plan` / `cursor_implement`). Keep the parent context lean.

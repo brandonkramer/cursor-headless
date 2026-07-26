@@ -3,7 +3,7 @@ export const meta = {
   description:
     'Fan out cursor-headless workers (cursor_ask/plan/implement) for a clear-spec task; Claude parent integrates',
   whenToUse:
-    'Invoked by /cursor-implement-workflow when the Workflow tool is available. Requires args {task, cwd}. Optional slices: [{goal, tool?, model?, worktree?}]. Returns worker summaries for the parent to integrate.',
+    'Invoked by /cursor-implement when the Workflow tool is available. Requires args {task, cwd}. Optional slices: [{goal, tool?, model?, worktree?}]. Returns worker summaries for the parent to integrate.',
   phases: [
     { title: 'Decompose', detail: 'split task into independent slices if not provided' },
     { title: 'Workers', detail: 'one thin Claude agent per slice; each must call cursor_* MCP' },
