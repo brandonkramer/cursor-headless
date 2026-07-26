@@ -1,19 +1,28 @@
 ---
 name: cursor-headless
 description: >-
-  Delegate to Cursor Agent from Codex via thin MCP tools (cursor_ask/plan/implement)
-  or `cursor-agent --print` headless mode. Ask/plan default to Grok 4.5 High (Codex
-  picks low|medium|high and Fast); implement defaults to Composer 2.5 (opt into Fast)
-  and escalates to Grok 4.5 by complexity. Covers ask/plan/write modes, worktrees,
-  cached preflight, and controlled write-capable runs. Use when the user asks for
-  Cursor CLI, Cursor Agent, Cursor headless, Composer 2.5, Grok 4.5 via Cursor, or
-  Cursor as a secondary agent.
+  Delegate to Cursor Agent from Codex or Claude Code via thin MCP tools
+  (cursor_ask/plan/implement) or `cursor-agent --print` headless mode. Ask/plan
+  default to Grok 4.5 High (pick low|medium|high and Fast); implement defaults to
+  Composer 2.5 (opt into Fast) and escalates to Grok 4.5 by complexity. Covers
+  ask/plan/write modes, worktrees, cached preflight, and controlled write-capable
+  runs. Use when the user asks for Cursor CLI, Cursor Agent, Cursor headless,
+  Composer 2.5, Grok 4.5 via Cursor, or Cursor as a secondary agent.
+triggers:
+  - "cursor implement"
+  - "cursor-agent implement"
+  - "cursor headless"
+  - "delegate implementation to cursor"
+  - "composer implement"
+  - "grok implement"
+  - "use cursor cli"
+  - "parallel cursor agents"
 ---
 
 # Cursor Headless
 
-Codex orchestrates; Cursor Agent executes bounded headless work via
-`cursor-agent --print`.
+Orchestrator (Codex or Claude Code) delegates; Cursor Agent executes bounded
+headless work via `cursor-agent --print`.
 
 **Prefer MCP tools** (thin facade, same speed as the CLI wrapper):
 
@@ -223,6 +232,16 @@ For `stream-json`, treat the final line with `type == "result"` as authoritative
 The wrapper streams lines to stdout and does not summarize them.
 
 For `json`, default is compact (not pretty). Use `--pretty-json` only when debugging.
+
+## Claude Code notes
+
+On Claude Code this plugin loads the same skill + MCP server. Prefer MCP tools
+when available; otherwise use the CLI wrapper / `cursor-agent -p` with the same
+model routing. Label thin wrapper agents `composer:…` or `grok:…`. Escalate
+heavier reasoning to **`codex-implementation`** (codex-headless Claude plugin),
+not a frontier model on the Cursor CLI.
+
+Replaces the former standalone **`cursor-implementation`** Claude plugin.
 
 ## Reporting
 

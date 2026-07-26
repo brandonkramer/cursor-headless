@@ -1,9 +1,9 @@
 {
   "name": "cursor-headless",
-  "version": "0.1.2",
-  "description": "Delegate to Cursor Agent from Codex via thin MCP tools (ask/plan/implement) wrapping a fast headless CLI path. Includes /cursor-implement-workflow and /cursor-review-loop.",
+  "version": "0.2.0",
+  "description": "Delegate to Cursor Agent from Codex or Claude via thin MCP tools (ask/plan/implement) wrapping a fast headless CLI path. Includes /cursor-implement-workflow and /cursor-review-loop.",
   "license": "MIT",
-  "keywords": ["cursor", "cursor-agent", "composer", "grok", "orchestration"],
+  "keywords": ["cursor", "cursor-agent", "composer", "grok", "orchestration", "claude"],
   "skills": "./skills/",
   "commands": "./commands/",
   "mcpServers": {
@@ -23,8 +23,8 @@
   },
   "interface": {
     "displayName": "Cursor Headless",
-    "shortDescription": "Native Cursor ask/plan/implement tools for Codex",
-    "longDescription": "Thin MCP facade over cursor-agent --print. cursor_ask/plan default to cursor-grok-4.5-high; cursor_implement defaults to composer-2.5 — Codex picks Grok low/medium/high and whether to use Fast.",
+    "shortDescription": "Native Cursor ask/plan/implement tools for Codex and Claude",
+    "longDescription": "Thin MCP facade over cursor-agent --print. cursor_ask/plan default to cursor-grok-4.5-high; cursor_implement defaults to composer-2.5 — pick Grok low/medium/high and whether to use Fast. Works as a Codex plugin and a Claude Code plugin.",
     "category": "Developer Tools",
     "capabilities": ["Read", "Write"],
     "defaultPrompt": [

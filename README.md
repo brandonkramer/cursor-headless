@@ -1,51 +1,48 @@
-# cursor-headless (Codex plugin)
+# cursor-headless
 
-Thin MCP tools over the fast `cursor_headless.py` wrapper — native Codex tools without an extra agent loop.
+Thin MCP tools + skill over `cursor-agent --print` for **Codex** and **Claude Code**.
+
+Repo: https://github.com/brandonkramer/cursor-headless
 
 ## Tools
 
 | Tool | Mode | Default model |
 |------|------|----------------|
-| `cursor_ask` | ask (read-only) | `cursor-grok-4.5-high` (Codex picks low\|medium\|high + Fast) |
-| `cursor_plan` | plan (read-only) | `cursor-grok-4.5-high` (Codex picks low\|medium\|high + Fast) |
+| `cursor_ask` | ask (read-only) | `cursor-grok-4.5-high` (pick low\|medium\|high + Fast) |
+| `cursor_plan` | plan (read-only) | `cursor-grok-4.5-high` (pick low\|medium\|high + Fast) |
 | `cursor_implement` | default + force | `composer-2.5` (opt into Fast; escalate to Grok 4.5 low/medium/high by complexity) |
 
 Pass `model` explicitly: simple → `composer-2.5` (or `*-fast` / `fast=true` when latency matters); light → `cursor-grok-4.5-low`; medium → `…-medium`; hard → `…-high`.
 
-## Slash commands
+## Codex slash commands
 
 | Command | What it does |
 |---------|----------------|
-| `/cursor-implement-workflow` | Codex orchestrates; fans out parallel `cursor_ask` / `cursor_plan` / `cursor_implement` workers (default `composer-2.5` + Fast; escalate to Grok 4.5 by difficulty) |
-| `/cursor-review-loop` | Codex (this chat) reviews → Cursor workers fix → Codex reviews again until no blocker/major findings (max 5 iterations) |
-
-Examples:
-
-```text
-/cursor-implement-workflow split auth refactor into explore + implement + tests
-/cursor-review-loop uncommitted changes from the auth refactor
-```
+| `/cursor-implement-workflow` | Codex orchestrates; fans out parallel `cursor_ask` / `cursor_plan` / `cursor_implement` workers |
+| `/cursor-review-loop` | Codex reviews → Cursor workers fix → Codex reviews again (max 5 iterations) |
 
 ## Layout
 
-- `commands/` — `/cursor-implement-workflow`, `/cursor-review-loop`
-- `skills/cursor-headless/` — routing skill + CLI wrapper
+- `.codex-plugin/` — Codex plugin manifest + MCP
+- `.claude-plugin/` — Claude Code marketplace + plugin manifest
+- `.mcp.json` — Claude MCP server entry (`uv` → FastMCP)
+- `commands/` — Codex slash commands
+- `skills/cursor-headless/` — shared routing skill + CLI wrapper
 - `src/cursor_headless_mcp.py` — FastMCP facade
-- `bin/cursor-headless-mcp` — `uv run --with mcp` launcher
+- `bin/cursor-headless-mcp` — optional launcher
 
-## Install
+Requires `uv` and `cursor-agent` on PATH.
 
-Dedicated marketplace: `cursor-headless` (plugin root is also the marketplace root).
-Requires `uv` and `cursor-agent` on PATH. MCP launches via `uv run` (Mac + Windows).
+## Install (Codex)
 
-Clone or copy this repo somewhere local, then point Codex at it:
+Plugin root is the Codex marketplace root. Point Codex at this clone:
 
 ### macOS / Linux
 
 ```toml
 [marketplaces.cursor-headless]
 source_type = "local"
-source = "$HOME/path/to/cursor-headless"
+source = "$HOME/.agents/plugins/cursor-headless"
 
 [plugins."cursor-headless@cursor-headless"]
 enabled = true
@@ -56,10 +53,51 @@ enabled = true
 ```toml
 [marketplaces.cursor-headless]
 source_type = "local"
-source = '%USERPROFILE%\path\to\cursor-headless'
+source = '%USERPROFILE%\.agents\plugins\cursor-headless'
 
 [plugins."cursor-headless@cursor-headless"]
 enabled = true
 ```
 
-Replace the `source` path with the absolute path to your clone. After editing config, restart Codex.
+Restart Codex after editing config.
+
+## Install (Claude Code)
+
+Same clone — marketplace root is this repo (`.claude-plugin/marketplace.json`):
+
+```bash
+claude plugin marketplace add /path/to/cursor-headless
+claude plugin install cursor-headless@cursor-headless-local
+```
+
+Or in `~/.claude/settings.json`:
+
+```json
+{
+  "enabledPlugins": {
+    "cursor-headless@cursor-headless-local": true
+  },
+  "extraKnownMarketplaces": {
+    "cursor-headless-local": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/YOU/.agents/plugins/cursor-headless"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Code / `/reload-plugins` after install.
+
+This replaces the old standalone **`cursor-implementation`** Claude plugin.
+
+## Model routing (short)
+
+```
+ask / plan     → cursor-grok-4.5-{low,medium,high}  (+ Fast optional)
+implement      → composer-2.5 (+ Fast) by default; escalate Grok by complexity
+misses bar     → Codex / gpt-5.6 (orchestrator), not a heavier Cursor frontier model
+```
+
+See `skills/cursor-headless/SKILL.md` for full routing.

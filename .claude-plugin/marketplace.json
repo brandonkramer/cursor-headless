@@ -1,0 +1,17 @@
+{
+  "name": "cursor-headless-local",
+  "owner": {
+    "name": "brandonkramer"
+  },
+  "metadata": {
+    "description": "Local cursor-headless plugin for Claude Code (shared with Codex)"
+  },
+  "plugins": [
+    {
+      "name": "cursor-headless",
+      "description": "Delegate to Cursor Agent via MCP (cursor_ask/plan/implement) or cursor-agent CLI; Composer + Grok routing",
+      "source": ".",
+      "category": "developer-tools"
+    }
+  ]
+}
