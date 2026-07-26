@@ -2,8 +2,6 @@
 
 Thin MCP tools + skill over `cursor-agent --print` for **Codex** and **Claude Code**.
 
-Repo: https://github.com/brandonkramer/cursor-headless
-
 ## Tools
 
 | Tool | Mode | Default model |
