@@ -245,6 +245,17 @@ with the same model routing.
 Workflow tool. Scripts coordinate thin Claude agents that must call `cursor_*`
 MCP — the workflow runtime cannot call MCP/shell itself.
 
+**`/loop` scheduling** (session-scoped): use `/cursor-loop [interval] [implement|review|babysit] …`
+to arm Claude’s `/loop` / cron tools so each tick re-runs `/cursor-implement` or
+`/cursor-review-loop` (or babysits CI/PR via `cursor_implement`). Loops stop when
+the session ends; Esc cancels while waiting. Not a durable cloud cron.
+
+```text
+/cursor-loop 10m review uncommitted changes
+/cursor-loop 15m implement remaining parser slices
+/loop 20m /cursor-review-loop auth PR   # also fine: /loop can re-invoke skills
+```
+
 Label thin wrapper agents `composer:…` or `grok:…`. Escalate heavier reasoning
 to **`codex-implementation`** (codex-headless Claude plugin), not a frontier
 model on the Cursor CLI.

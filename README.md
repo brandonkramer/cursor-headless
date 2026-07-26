@@ -20,6 +20,7 @@ Parent chat orchestrates; Cursor workers execute.
 |---------|----------------|
 | `/cursor-implement` | You plan/sequence/integrate; fan out parallel `cursor_ask` / `cursor_plan` / `cursor_implement` workers |
 | `/cursor-review-loop` | You review → Cursor workers fix → you review again (max 5 iterations) |
+| `/cursor-loop` | Arm Claude `/loop` to re-run implement / review / CI babysit on an interval (Claude Code only) |
 
 ## Claude workflows (Claude Code only)
 
@@ -31,6 +32,19 @@ Requires Dynamic workflows (Claude Code ≥ 2.1.154; enable in `/config`).
 | `workflows/review-loop.js` | `/cursor-headless:review-loop` or via `/cursor-review-loop` | Claude review agents ↔ `cursor_implement` fix workers (max 5) |
 
 Slash commands prefer the Workflow tool when available, and fall back to direct MCP fan-out (same path Codex uses).
+
+### `/loop` recipes (Claude Code)
+
+Session-scoped scheduler — machine + session must stay up. See [scheduled tasks](https://code.claude.com/docs/en/scheduled-tasks).
+
+```text
+/cursor-loop 10m review uncommitted changes
+/cursor-loop 15m implement finish remaining slices
+/cursor-loop babysit          # CI/PR comments → cursor_implement fixes
+/loop 20m /cursor-review-loop auth PR
+```
+
+Stop with `Esc` while waiting, or ask to cancel the cron job. For durable unattended runs use Desktop scheduled tasks or Routines — not `/loop`.
 
 ## Layout
 

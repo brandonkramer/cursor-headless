@@ -1,7 +1,7 @@
 {
   "name": "cursor-headless",
-  "version": "0.2.3",
-  "description": "Delegate to Cursor Agent from Claude Code or Codex via MCP (ask/plan/implement). Claude workflows under workflows/; slash commands for both hosts.",
+  "version": "0.2.4",
+  "description": "Delegate to Cursor Agent from Claude Code or Codex via MCP (ask/plan/implement). Claude workflows + /cursor-loop; slash commands for both hosts.",
   "license": "MIT",
   "keywords": ["cursor", "cursor-agent", "composer", "grok", "orchestration", "claude"],
   "skills": "./skills/",
@@ -32,7 +32,8 @@
       "Use cursor_plan with Grok 4.5 low/medium/high (opt into Fast) by complexity.",
       "Use cursor_implement with composer-2.5 (opt into Fast) or Grok 4.5 low/medium/high by complexity.",
       "Use /cursor-implement to fan out parallel Cursor workers from Codex.",
-      "Use /cursor-review-loop for Codex review → Cursor fix → Codex re-review until clean."
+      "Use /cursor-review-loop for parent review → Cursor fix → re-review until clean.",
+      "On Claude Code, use /cursor-loop to arm /loop with cursor-headless implement/review/babysit ticks."
     ]
   }
 }
