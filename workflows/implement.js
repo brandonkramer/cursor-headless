@@ -56,8 +56,14 @@ function normalizeSlice(s, i) {
         ? `cursor-impl-${i + 1}`
         : null
       : s.worktree
-  const fast = s.fast !== false && !model.endsWith('-fast') && model.startsWith('composer')
-  return { goal, tool, model, worktree, fast: Boolean(s.fast) || fast }
+  // A `*-fast` model id already encodes the fast variant; keep the id verbatim and
+  // mirror the intent into the flag so the two can never disagree. Composer stays
+  // fast-by-default (mechanical work) unless the caller explicitly opts out.
+  const fast =
+    s.fast === undefined || s.fast === null
+      ? model.endsWith('-fast') || model.startsWith('composer')
+      : Boolean(s.fast)
+  return { goal, tool, model, worktree, fast }
 }
 
 const SLICE_SCHEMA = {
@@ -108,11 +114,13 @@ You are a thin wrapper. You MUST use the cursor-headless MCP tools
 own Write/Edit tools. Do NOT run tests, installs, builds, or dev servers unless
 the slice prompt explicitly requires it.
 
-Always pass cwd=${JSON.stringify(cwd)}.
-For cursor_implement prefer worktree isolation when a worktree name is given.
-Prefer composer-2.5 + fast for mechanical work; escalate to cursor-grok-4.5-{low,medium,high}
-(+ fast) only when the slice needs more judgment.
+Model routing is already decided for you. Pass the MCP arguments EXACTLY as given
+below — copy the model id verbatim, including any "-fast" suffix. Do NOT split,
+shorten, normalize, or substitute the model id, and do NOT re-derive the fast flag.
+Choosing a different model than the one specified is a failure of this slice.
+
 Return a compact summary only — workers do not see parent history.
+Report the model id you actually passed, verbatim, in the "model" field.
 `
 
 let slices = Array.isArray(ARGS.slices)
@@ -169,9 +177,25 @@ const results = await parallel(
 
 Slice ${i + 1}/${slices.length}
 Tool: ${slice.tool}
-Model: ${slice.model}
-Fast: ${slice.fast}
-Worktree: ${slice.worktree || '(none — in-tree if implement)'}
+
+Call ${slice.tool} with EXACTLY these argument values, copied verbatim
+(add only your expanded \`prompt\`):
+${JSON.stringify(
+  {
+    model: slice.model,
+    fast: slice.fast,
+    cwd,
+    ...(slice.tool === 'cursor_implement' && slice.worktree
+      ? { worktree: slice.worktree }
+      : {}),
+  },
+  null,
+  2,
+)}${
+        slice.tool === 'cursor_implement' && !slice.worktree
+          ? '\n(no worktree — this slice runs in-tree)'
+          : ''
+      }
 
 Overall task (context only):
 <<<TASK

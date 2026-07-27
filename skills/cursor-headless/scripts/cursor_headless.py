@@ -40,8 +40,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cwd", default=".", help="Workspace directory for Cursor Agent.")
     parser.add_argument(
         "--model",
-        default="composer-2.5",
-        help="Cursor model id (default: composer-2.5). Pass --fast or *-fast ids when speed matters.",
+        default=None,
+        help=(
+            "Cursor model id (default: cursor-grok-4.5-high for ask/plan; "
+            "composer-2.5 for default/write mode). Pass --fast or *-fast ids when speed matters."
+        ),
     )
     parser.add_argument(
         "--fast",
@@ -303,7 +306,8 @@ def run_streaming(cmd: list[str], cwd: str, timeout: float) -> int:
 def main() -> int:
     args = parse_args()
     prompt = load_prompt(args)
-    model = resolve_model(args.model, prefer_fast=args.fast)
+    default_model = "composer-2.5" if args.mode == "default" else "cursor-grok-4.5-high"
+    model = resolve_model(args.model or default_model, prefer_fast=args.fast)
     ensure_preflight(model, force=args.preflight, skip=args.skip_preflight)
     cmd = build_command(args, prompt, model)
 
