@@ -49,7 +49,7 @@ when `fast` is true.
 | Model id | When to use |
 |----------|-------------|
 | **`cursor-grok-4.5-high`** | **Default for `cursor_ask` / `cursor_plan`.** Also implement when work is hard/ambiguous/cross-cutting. |
-| **`composer-2.5`** | Simple/mechanical implement (tool default). Override ask/plan when you want cheaper. |
+| **`composer-2.5`** | Simple/mechanical implement (tool default). Use for ask/plan only when the question itself is mechanical; never use it for root-cause analysis, multi-file reasoning, or test/fix design. |
 | **`composer-2.5-fast`** / Grok `*-fast` | Same tier when speed matters — pass `fast=true` or the `*-fast` id. |
 | `cursor-grok-4.5-low` | Light ask/plan/implement — small, mostly clear. |
 | `cursor-grok-4.5-medium` | Medium ask/plan/implement — multi-file reasoning, normal designs. |
@@ -85,7 +85,7 @@ python3 "$PLUGIN_ROOT/skills/cursor-headless/scripts/cursor_headless.py" --cwd "
 
 ## Decision Path
 
-1. Ask/plan → pick Grok low|medium|high (default high); opt into Fast when latency matters. Implement → `composer-2.5` by default; opt into Fast or escalate to Grok by complexity.
+1. Ask/plan → pick Grok low|medium|high (default high); opt into Fast when latency matters. Root-cause analysis, multi-file reasoning, and test/fix design are Grok work even when read-only. Implement → `composer-2.5` by default; opt into Fast or escalate to Grok by complexity.
 2. `--mode ask` — one-shot advisory, no edits.
 3. `--mode plan` — read-only exploration / planning.
 4. `--mode default` — write-capable implementation only.
@@ -97,7 +97,7 @@ python3 "$PLUGIN_ROOT/skills/cursor-headless/scripts/cursor_headless.py" --cwd "
 
 | Lever | Default | Why |
 |-------|---------|-----|
-| Model | `composer-2.5` | Full Composer tier; opt into Fast when latency matters |
+| Model | ask/plan: `cursor-grok-4.5-high`; implement: `composer-2.5` | Mode-aware defaults; opt into Fast when latency matters |
 | Output | `text` | Avoid JSON parse/pretty cost |
 | Stdin | closed (`DEVNULL`) | Prevents stdin-wait hangs |
 | Preflight | cached 1h | Avoid N× `cursor-agent` cold starts |
@@ -125,7 +125,7 @@ Equivalent raw CLI:
 ```bash
 cursor-agent --print \
   --mode ask \
-  --model composer-2.5 \
+  --model cursor-grok-4.5-high \
   --output-format text \
   --sandbox enabled \
   --trust \
@@ -135,7 +135,7 @@ cursor-agent --print \
 
 Defaults unless the task needs more:
 
-- `--model composer-2.5`
+- `--model cursor-grok-4.5-high` for ask/plan; `--model composer-2.5` for implementation
 - `--mode ask` or `plan` for read-only; `default` + `--force` only for approved writes
 - `--output-format text` (use `json` / `stream-json` when parsing)
 - `--sandbox enabled --trust --workspace "$PWD"`
@@ -217,7 +217,7 @@ Useful wrapper flags:
 
 | Flag | Purpose |
 |------|---------|
-| `--model` | Default `composer-2.5`; pass `--fast` or grok low|medium|high **`-fast`** when needed |
+| `--model` | Mode-aware default: ask/plan use Grok High; implementation uses Composer; pass `--fast` or an explicit tier when needed |
 | `--fast` | Map model → `*-fast` variant when applicable |
 | `--skip-preflight` / `--preflight` | Skip or force auth/model checks |
 | `--prompt-file` | Long prompts out of argv/history |
