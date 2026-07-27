@@ -1,0 +1,9 @@
+# Workflow scripts are read verbatim by the Claude Code Workflow tool, which
+# rejects control characters (including CR) in the script body. Keep LF on all
+# platforms regardless of core.autocrlf.
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.sh text eol=lf
