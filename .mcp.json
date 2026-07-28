@@ -4,7 +4,7 @@
     "args": [
       "run",
       "--with",
-      "mcp",
+      "mcp>=1.9,<2",
       "--python",
       "3.14",
       "python",

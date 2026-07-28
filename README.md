@@ -59,6 +59,10 @@ Stop with `Esc` while waiting, or ask to cancel the cron job. For durable unatte
 
 Requires `uv` and `cursor-agent` on PATH.
 
+Note: pin `mcp>=1.9,<2` — MCP Python SDK 2.x removed `mcp.server.fastmcp`.
+After updating, reinstall the Codex plugin (`codex plugin remove` / `add`) so the
+versioned cache under `~/.codex/plugins/cache/` picks up the pin.
+
 ## Install (Codex)
 
 Plugin root is the Codex marketplace root. Point Codex at this clone:
