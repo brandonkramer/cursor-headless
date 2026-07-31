@@ -220,8 +220,10 @@ Useful wrapper flags:
 | `--model` | Mode-aware default: ask/plan use Grok High; implementation uses Composer; pass `--fast` or an explicit tier when needed |
 | `--fast` | Map model → `*-fast` variant when applicable |
 | `--skip-preflight` / `--preflight` | Skip or force auth/model checks |
-| `--prompt-file` | Long prompts out of argv/history |
-| `--timeout` | Default 600s |
+| `--prompt-file` | Load prompt text (wrapper still stages `CURSOR_TASK-*` for cursor-agent) |
+| `--require-diff` | Fail write runs with clean `git status --porcelain` |
+| `--inline-prompt` | Force argv delivery (one-line smoke only; unsafe on Windows) |
+| `--timeout` | Default 600s (watch Bash 10m reap — see trap below) |
 | `--raw` / `--pretty-json` | Output control |
 | `--continue-session` / `--resume` | Faster multi-step |
 | `--approve-mcps` | Headless MCP approval |
@@ -262,6 +264,41 @@ model on the Cursor CLI.
 
 Replaces the former standalone **`cursor-implementation`** Claude plugin.
 
+## Prompt delivery (Windows / multiline)
+
+Never rely on multiline argv into `cursor-agent` — the Windows `.cmd` shim truncates
+to the first line. The wrapper always stages a unique `CURSOR_TASK-<hash>-….md` in
+`--cwd` on Windows (and for any multiline / long prompt elsewhere), then sends a
+one-line bootstrap. Unique names unlock parallel slices; do **not** share a single
+`CURSOR_TASK.md` across workers.
+
+MCP tools write a temp `--prompt-file` first (same reason). Prefer MCP or the
+wrapper; do not paste multiline prompts straight onto `cursor-agent`.
+
+Subprocess decode uses `encoding=utf-8, errors=replace` — no need for `PYTHONUTF8=1`.
+
+After every run the wrapper appends `git status --porcelain` + `git diff --stat HEAD`.
+Pass `--require-diff` / MCP `require_diff=true` on write runs to fail clean-tree "success".
+
+## Bash 10-minute / workflow-reap trap
+
+Claude Code Bash tools often hard-cap around **10 minutes**. A Workflow / thin
+subagent that shells `cursor_headless.py` (or MCP that waits on it) gets
+**backgrounded then reaped** with **zero tree changes** if the run exceeds that
+cap — while Cursor may still be running elsewhere or may have fabricated a completion
+report.
+
+**Do this instead:**
+
+1. Launch long Cursor writes from the **parent session** background Bash (or raise
+   the tool timeout), not from a Workflow worker that inherits the 10m cap.
+2. Never trust Cursor's narrative alone — check wrapper git evidence / `git status`.
+3. Keep slices under ~8 minutes wall, or use `--worktree` + unique task files and
+   poll from the parent.
+
+Workflow scripts in this plugin are plain ASCII + LF only (CRLF / fancy Unicode
+breaks Claude's approval dialog: "control characters that would be hidden").
+
 ## Reporting
 
 When returning Cursor results to the user, include:
@@ -272,3 +309,4 @@ When returning Cursor results to the user, include:
 - Read-only vs auto-review vs force
 - Workspace / worktree boundary
 - Result, denials, failures, incomplete output
+- Wrapper git evidence (porcelain / diffstat); treat clean tree + "done" as failure unless expected

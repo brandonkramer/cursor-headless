@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import selectors
@@ -31,6 +32,9 @@ PREFLIGHT_CACHE = Path(
     )
 )
 PREFLIGHT_TTL_SEC = float(os.environ.get("CURSOR_HEADLESS_PREFLIGHT_TTL", "3600"))
+
+# Windows .cmd shims mangle newlines in argv; always stage multiline / win32 prompts.
+_SUBPROCESS_TEXT = {"text": True, "encoding": "utf-8", "errors": "replace"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -83,6 +87,16 @@ def parse_args() -> argparse.Namespace:
         "--skip-preflight",
         action="store_true",
         help="Skip preflight entirely (fastest; assume cursor-agent is ready).",
+    )
+    parser.add_argument(
+        "--require-diff",
+        action="store_true",
+        help="After a write run, fail if git status --porcelain is empty (fake success).",
+    )
+    parser.add_argument(
+        "--inline-prompt",
+        action="store_true",
+        help="Force prompt as a single argv element (unsafe on Windows; for one-line smoke tests).",
     )
     session_group = parser.add_mutually_exclusive_group()
     session_group.add_argument("--resume", nargs="?", const="", help="Resume a Cursor chat, optionally by chat id.")
@@ -139,11 +153,11 @@ def cursor_agent_bin() -> str:
 def run_quiet(cmd: list[str], timeout: float = 60.0) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         cmd,
-        text=True,
         capture_output=True,
         check=False,
         timeout=timeout,
         stdin=subprocess.DEVNULL,
+        **_SUBPROCESS_TEXT,
     )
 
 
@@ -200,6 +214,29 @@ def ensure_preflight(model: str, *, force: bool, skip: bool) -> None:
             "cursor-agent is not authenticated. Run `cursor-agent login` or set CURSOR_API_KEY."
         )
     write_preflight_cache(version=version.stdout or "", status_ok=status_ok, models_text=models_text)
+
+
+def should_stage_task_file(prompt: str, *, force_inline: bool) -> bool:
+    if force_inline:
+        return False
+    if os.name == "nt":
+        return True
+    if "\n" in prompt or "\r" in prompt:
+        return True
+    return len(prompt) > 800
+
+
+def stage_task_file(workspace: Path, prompt: str) -> tuple[str, Path]:
+    """Write unique CURSOR_TASK-*.md; return one-line bootstrap argv + path."""
+    digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12]
+    unique = f"{digest}-{os.getpid()}-{int(time.time() * 1000) % 1_000_000}"
+    path = workspace / f"CURSOR_TASK-{unique}.md"
+    path.write_text(prompt.replace("\r\n", "\n").replace("\r", "\n"), encoding="utf-8", newline="\n")
+    bootstrap = (
+        f"Read UTF-8 file {path.name} in the workspace root and execute that task fully. "
+        f"Do not invent completion. When finished, leave the file; the wrapper deletes it."
+    )
+    return bootstrap, path
 
 
 def build_command(args: argparse.Namespace, prompt: str, model: str) -> list[str]:
@@ -267,16 +304,51 @@ def summarize_json(stdout: str, *, pretty: bool) -> str:
     return json.dumps(data, separators=(",", ":"))
 
 
+def git_evidence(cwd: str) -> tuple[str, bool]:
+    """Return (report block, has_diff). has_diff True if porcelain non-empty."""
+    try:
+        st = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=cwd,
+            capture_output=True,
+            check=False,
+            timeout=30,
+            stdin=subprocess.DEVNULL,
+            **_SUBPROCESS_TEXT,
+        )
+        ds = subprocess.run(
+            ["git", "diff", "--stat", "HEAD"],
+            cwd=cwd,
+            capture_output=True,
+            check=False,
+            timeout=30,
+            stdin=subprocess.DEVNULL,
+            **_SUBPROCESS_TEXT,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"\n--- wrapper git evidence ---\n(unavailable: {exc})\n", False
+
+    porcelain = (st.stdout or "").rstrip()
+    diffstat = (ds.stdout or "").rstrip()
+    has_diff = bool(porcelain.strip())
+    block = (
+        "\n--- wrapper git evidence ---\n"
+        f"git status --porcelain:\n{porcelain if porcelain else '(clean)'}\n"
+        f"git diff --stat HEAD:\n{diffstat if diffstat else '(empty)'}\n"
+    )
+    return block, has_diff
+
+
 def run_streaming(cmd: list[str], cwd: str, timeout: float) -> int:
     started_at = time.monotonic()
     proc = subprocess.Popen(
         cmd,
         cwd=cwd,
-        text=True,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=None,
         bufsize=1,
+        **_SUBPROCESS_TEXT,
     )
     assert proc.stdout is not None
     selector = selectors.DefaultSelector()
@@ -309,41 +381,69 @@ def main() -> int:
     default_model = "composer-2.5" if args.mode == "default" else "cursor-grok-4.5-high"
     model = resolve_model(args.model or default_model, prefer_fast=args.fast)
     ensure_preflight(model, force=args.preflight, skip=args.skip_preflight)
-    cmd = build_command(args, prompt, model)
 
-    if args.output_format == "stream-json":
-        return run_streaming(cmd, args.cwd, args.timeout)
+    workspace = Path(args.cwd).resolve()
+    task_path: Path | None = None
+    delivery = prompt
+    if should_stage_task_file(prompt, force_inline=args.inline_prompt):
+        delivery, task_path = stage_task_file(workspace, prompt)
+
+    cmd = build_command(args, delivery, model)
+    exit_code = 0
 
     try:
-        proc = subprocess.run(
-            cmd,
-            cwd=args.cwd,
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=args.timeout,
-            stdin=subprocess.DEVNULL,
+        if args.output_format == "stream-json":
+            exit_code = run_streaming(cmd, str(workspace), args.timeout)
+        else:
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    cwd=str(workspace),
+                    capture_output=True,
+                    check=False,
+                    timeout=args.timeout,
+                    stdin=subprocess.DEVNULL,
+                    **_SUBPROCESS_TEXT,
+                )
+            except subprocess.TimeoutExpired as exc:
+                if exc.stdout:
+                    print(exc.stdout, end="")
+                if exc.stderr:
+                    print(exc.stderr, file=sys.stderr, end="")
+                print(f"cursor-agent timed out after {args.timeout:g}s", file=sys.stderr)
+                exit_code = 124
+            else:
+                if proc.stderr:
+                    print(proc.stderr, file=sys.stderr, end="")
+
+                if args.raw or args.output_format != "json":
+                    print(proc.stdout, end="")
+                else:
+                    try:
+                        print(summarize_json(proc.stdout, pretty=args.pretty_json))
+                    except json.JSONDecodeError:
+                        print(proc.stdout, end="")
+
+                exit_code = proc.returncode
+    finally:
+        if task_path is not None:
+            try:
+                task_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    evidence, has_diff = git_evidence(str(workspace))
+    print(evidence, end="")
+
+    if args.require_diff and args.mode == "default" and exit_code == 0 and not has_diff:
+        print(
+            "error: --require-diff set but git status --porcelain is clean "
+            "(Cursor report claimed success with no tree changes)",
+            file=sys.stderr,
         )
-    except subprocess.TimeoutExpired as exc:
-        if exc.stdout:
-            print(exc.stdout, end="")
-        if exc.stderr:
-            print(exc.stderr, file=sys.stderr, end="")
-        print(f"cursor-agent timed out after {args.timeout:g}s", file=sys.stderr)
-        return 124
+        return 2
 
-    if proc.stderr:
-        print(proc.stderr, file=sys.stderr, end="")
-
-    if args.raw or args.output_format != "json":
-        print(proc.stdout, end="")
-    else:
-        try:
-            print(summarize_json(proc.stdout, pretty=args.pretty_json))
-        except json.JSONDecodeError:
-            print(proc.stdout, end="")
-
-    return proc.returncode
+    return exit_code
 
 
 if __name__ == "__main__":

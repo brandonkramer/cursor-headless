@@ -1,6 +1,6 @@
 {
   "name": "cursor-headless",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Delegate to Cursor Agent from Claude Code or Codex via MCP (ask/plan/implement). Claude workflows + /cursor-loop; slash commands for both hosts.",
   "license": "MIT",
   "keywords": ["cursor", "cursor-agent", "composer", "grok", "orchestration", "claude"],

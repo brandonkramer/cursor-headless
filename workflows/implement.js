@@ -115,11 +115,11 @@ own Write/Edit tools. Do NOT run tests, installs, builds, or dev servers unless
 the slice prompt explicitly requires it.
 
 Model routing is already decided for you. Pass the MCP arguments EXACTLY as given
-below — copy the model id verbatim, including any "-fast" suffix. Do NOT split,
+below - copy the model id verbatim, including any "-fast" suffix. Do NOT split,
 shorten, normalize, or substitute the model id, and do NOT re-derive the fast flag.
 Choosing a different model than the one specified is a failure of this slice.
 
-Return a compact summary only — workers do not see parent history.
+Return a compact summary only - workers do not see parent history.
 Report the model id you actually passed, verbatim, in the "model" field.
 `
 
@@ -129,9 +129,9 @@ let slices = Array.isArray(ARGS.slices)
 
 if (slices.length === 0) {
   phase('Decompose')
-  log('No slices provided — decomposing task into parallel cursor-headless workers')
+  log('No slices provided - decomposing task into parallel cursor-headless workers')
   const plan = await agent(
-    `Decompose this implementation task into 2–6 independent slices for
+    `Decompose this implementation task into 2-6 independent slices for
 cursor-headless workers. Each slice must be self-contained.
 
 Task:
@@ -158,7 +158,7 @@ Return JSON slices only.`,
 }
 
 if (slices.length === 0) {
-  throw new Error('Decomposition produced no slices — provide args.slices or a clearer task')
+  throw new Error('Decomposition produced no slices - provide args.slices or a clearer task')
 }
 
 // Cap fan-out; runtime also enforces concurrency
@@ -193,7 +193,7 @@ ${JSON.stringify(
   2,
 )}${
         slice.tool === 'cursor_implement' && !slice.worktree
-          ? '\n(no worktree — this slice runs in-tree)'
+          ? '\n(no worktree - this slice runs in-tree)'
           : ''
       }
 

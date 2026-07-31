@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -13,6 +15,8 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 WRAPPER = PLUGIN_ROOT / "skills" / "cursor-headless" / "scripts" / "cursor_headless.py"
 
 mcp = FastMCP("cursor-headless")
+
+_SUBPROCESS_TEXT = {"text": True, "encoding": "utf-8", "errors": "replace"}
 
 
 def _run_wrapper(
@@ -28,60 +32,80 @@ def _run_wrapper(
     output_format: str,
     continue_session: bool,
     timeout: float,
+    require_diff: bool,
 ) -> str:
     if not WRAPPER.is_file():
         return f"error: wrapper missing at {WRAPPER}"
 
-    cmd = [
-        sys.executable,
-        str(WRAPPER),
-        "--cwd",
-        cwd,
-        "--mode",
-        mode,
-        "--model",
-        model,
-        "--output-format",
-        output_format,
-        "--timeout",
-        str(timeout),
-    ]
-    if prefer_fast:
-        cmd.append("--fast")
-    if force:
-        cmd.append("--force")
-    if skip_preflight:
-        cmd.append("--skip-preflight")
-    if continue_session:
-        cmd.append("--continue-session")
-    if worktree is not None:
-        cmd.append("--worktree")
-        if worktree:
-            cmd.append(worktree)
-
-    cmd.append(prompt)
-
+    # Never put multiline prompts on argv (Windows .cmd + Python argv mangling).
+    prompt_path: str | None = None
     try:
-        proc = subprocess.run(
-            cmd,
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=timeout + 30,
-            stdin=subprocess.DEVNULL,
+        fd, prompt_path = tempfile.mkstemp(prefix="cursor-mcp-prompt-", suffix=".md")
+        os.close(fd)
+        Path(prompt_path).write_text(
+            prompt.replace("\r\n", "\n").replace("\r", "\n"),
+            encoding="utf-8",
+            newline="\n",
         )
-    except subprocess.TimeoutExpired as exc:
-        out = (exc.stdout or "") + (exc.stderr or "")
-        return f"error: timed out after {timeout:g}s\n{out}".strip()
 
-    parts = []
-    if proc.stdout:
-        parts.append(proc.stdout.rstrip())
-    if proc.stderr:
-        parts.append(f"[stderr]\n{proc.stderr.rstrip()}")
-    if proc.returncode != 0:
-        parts.append(f"[exit {proc.returncode}]")
-    return "\n".join(parts) if parts else f"[exit {proc.returncode}] (empty output)"
+        cmd = [
+            sys.executable,
+            str(WRAPPER),
+            "--cwd",
+            cwd,
+            "--mode",
+            mode,
+            "--model",
+            model,
+            "--output-format",
+            output_format,
+            "--timeout",
+            str(timeout),
+            "--prompt-file",
+            prompt_path,
+        ]
+        if prefer_fast:
+            cmd.append("--fast")
+        if force:
+            cmd.append("--force")
+        if skip_preflight:
+            cmd.append("--skip-preflight")
+        if continue_session:
+            cmd.append("--continue-session")
+        if require_diff:
+            cmd.append("--require-diff")
+        if worktree is not None:
+            cmd.append("--worktree")
+            if worktree:
+                cmd.append(worktree)
+
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                check=False,
+                timeout=timeout + 30,
+                stdin=subprocess.DEVNULL,
+                **_SUBPROCESS_TEXT,
+            )
+        except subprocess.TimeoutExpired as exc:
+            out = (exc.stdout or "") + (exc.stderr or "")
+            return f"error: timed out after {timeout:g}s\n{out}".strip()
+
+        parts = []
+        if proc.stdout:
+            parts.append(proc.stdout.rstrip())
+        if proc.stderr:
+            parts.append(f"[stderr]\n{proc.stderr.rstrip()}")
+        if proc.returncode != 0:
+            parts.append(f"[exit {proc.returncode}]")
+        return "\n".join(parts) if parts else f"[exit {proc.returncode}] (empty output)"
+    finally:
+        if prompt_path:
+            try:
+                os.unlink(prompt_path)
+            except OSError:
+                pass
 
 
 @mcp.tool()
@@ -111,6 +135,7 @@ def cursor_ask(
         output_format="text",
         continue_session=continue_session,
         timeout=timeout,
+        require_diff=False,
     )
 
 
@@ -141,6 +166,7 @@ def cursor_plan(
         output_format="text",
         continue_session=continue_session,
         timeout=timeout,
+        require_diff=False,
     )
 
 
@@ -155,6 +181,7 @@ def cursor_implement(
     skip_preflight: bool = True,
     continue_session: bool = False,
     timeout: float = 600,
+    require_diff: bool = False,
 ) -> str:
     """Write-capable Cursor implementation (--mode default).
 
@@ -165,6 +192,7 @@ def cursor_implement(
     - hard/ambiguous/cross-cutting → cursor-grok-4.5-high (+ Fast optional)
 
     Set worktree for isolation; force defaults true. `fast` defaults false — opt in to upgrade to *-fast.
+    Set require_diff=true to fail when Cursor claims success but git status is clean.
     """
     return _run_wrapper(
         prompt=prompt,
@@ -178,6 +206,7 @@ def cursor_implement(
         output_format="text",
         continue_session=continue_session,
         timeout=timeout,
+        require_diff=require_diff,
     )
 
 

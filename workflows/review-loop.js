@@ -72,7 +72,7 @@ const FIX_SCHEMA = {
 const MCP_FIX = `
 You are a thin fix worker. You MUST call cursor_implement (cursor-headless MCP)
 to apply the fix. Do NOT edit files with your own Write/Edit tools unless the
-MCP tools are unavailable — if unavailable, set ok=false and explain.
+MCP tools are unavailable - if unavailable, set ok=false and explain.
 
 Always pass cwd=${JSON.stringify(cwd)}.
 Prefer composer-2.5 with fast=true for mechanical fixes; use
@@ -109,7 +109,7 @@ for (let iteration = 1; iteration <= maxIterations; iteration++) {
           .join('\n')}\nFocus this pass on touched areas + prior findings; do not dump the whole repo.`
 
   lastReview = await agent(
-    `You are the reviewer for this chat's review→fix loop. Do NOT implement fixes
+    `You are the reviewer for this chat's review->fix loop. Do NOT implement fixes
 (except you may note trivial one-liners in findings.fix). Produce a structured
 verdict.
 
