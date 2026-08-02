@@ -404,6 +404,23 @@ def git_evidence(cwd: str) -> tuple[str, bool]:
     return block, has_diff
 
 
+def _kill_process_tree(proc: subprocess.Popen[str]) -> None:
+    if proc.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+            capture_output=True,
+            check=False,
+        )
+    else:
+        proc.kill()
+    try:
+        proc.wait(timeout=5)
+    except Exception:
+        pass
+
+
 def run_streaming(cmd: list[str], cwd: str, timeout: float) -> int:
     """Stream stdout lines with a wall-clock timeout.
 
@@ -437,7 +454,7 @@ def run_streaming(cmd: list[str], cwd: str, timeout: float) -> int:
         elapsed = time.monotonic() - started_at
         remaining = timeout - elapsed
         if remaining <= 0:
-            proc.kill()
+            _kill_process_tree(proc)
             safe_print(
                 f"cursor-agent timed out after {timeout:g}s — treat as no result; "
                 "retry narrower or raise --timeout / MCP timeout=",

@@ -92,7 +92,7 @@ def prove_cli_runner_fake() -> None:
     section("cli_runner fake cursor-agent stream-json")
     from cli_runner import run_cli
 
-    with tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         td_path = Path(td)
         fake_bin = td_path / "bin"
         fake_bin.mkdir()

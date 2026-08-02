@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -50,6 +51,24 @@ def _child_env() -> dict[str, str]:
     env.setdefault("PYTHONUTF8", "1")
     env.setdefault("PYTHONIOENCODING", "utf-8")
     return env
+
+
+def _kill_process_tree(proc: Popen[str]) -> None:
+    """Kill wrapper + children (Windows needs taskkill /T)."""
+    if proc.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+            capture_output=True,
+            check=False,
+        )
+    else:
+        proc.kill()
+    try:
+        proc.wait(timeout=5)
+    except Exception:
+        pass
 
 
 def _extract_assistant_snippet(event: dict[str, object]) -> str:
@@ -327,7 +346,7 @@ def run_cli(
             elapsed = time.monotonic() - started
             if elapsed > outer_timeout:
                 timed_out = True
-                proc.kill()
+                _kill_process_tree(proc)
                 break
 
             line = proc.stdout.readline()
@@ -371,7 +390,7 @@ def run_cli(
 
             if time.monotonic() - started > timeout:
                 timed_out = True
-                proc.kill()
+                _kill_process_tree(proc)
                 break
 
             time.sleep(0.05)

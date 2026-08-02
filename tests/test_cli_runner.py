@@ -62,7 +62,7 @@ class ParseNdjsonLineTests(unittest.TestCase):
 
 class RunCliIntegrationTests(unittest.TestCase):
     def test_successful_stream_json_run(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             bin_dir = Path(tmp) / "bin"
             bin_dir.mkdir()
             events = [
@@ -133,7 +133,7 @@ class RunCliIntegrationTests(unittest.TestCase):
             self.assertIn("tool #1", result["progress_summary"])
 
     def test_timeout_returns_timeout_status(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             bin_dir = Path(tmp) / "bin"
             bin_dir.mkdir()
             _write_fake_agent(
