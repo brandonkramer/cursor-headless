@@ -21,10 +21,11 @@ triggers:
 
 # Cursor Headless
 
-Orchestrator (Codex or Claude Code) delegates; Cursor Agent executes bounded
-headless work via `cursor-agent --print`.
+Orchestrator (Codex or Claude Code) delegates; Cursor executes bounded headless
+work via MCP. Backend is **`cli`** (`cursor-agent --print`) or **`sdk`**
+(`cursor-sdk`) — same tools and envelope either way.
 
-**Prefer MCP tools** (thin facade, same speed as the CLI wrapper):
+**Prefer MCP tools** (`cursor_ask` / `cursor_plan` / `cursor_implement`):
 
 | Tool | Use | Default model |
 |------|-----|----------------|
@@ -32,20 +33,45 @@ headless work via `cursor-agent --print`.
 | `cursor_plan` | Read-only explore/plan (`--mode plan`) | `cursor-grok-4.5-high` — **you pick tier + Fast** |
 | `cursor_implement` | Writes (`--mode default`, `--force`) | `composer-2.5` — **you pick by complexity / when to use Fast** |
 
-Fallback CLI wrapper: `scripts/cursor_headless.py` (also what the MCP server calls).
+Fallback CLI wrapper: `scripts/cursor_headless.py` (also what the MCP `cli` path uses).
 
 ## Backend (CLI vs SDK)
 
-Auto: **`sdk`** when `CURSOR_API_KEY` is set, else **`cli`** (`cursor-agent --print`,
-MCP forces `--output-format stream-json` for live progress). Override with MCP
-`backend=` or `CURSOR_HEADLESS_BACKEND`. MCP `uv` includes `cursor-sdk`. Same
-tools/envelope; SDK lazy-loaded. Windows Bridge discovery is patched for live SDK.
+Same MCP args (`fast`, `model`, `worktree`, `continue_session`, `timeout`, …).
+
+1. Per-call `backend="cli"|"sdk"`
+2. Env `CURSOR_HEADLESS_BACKEND`
+3. **Auto:** `sdk` if `CURSOR_API_KEY` is set, else `cli`
+
+| Backend | Needs | Notes |
+|---------|-------|-------|
+| `cli` | `cursor-agent` login on PATH | stream-json progress |
+| `sdk` | `CURSOR_API_KEY` (`crsr_…`) | MCP `uv --with cursor-sdk`; lazy-imported |
+
+Windows: Bridge discovery is patched in-process so live SDK works (upstream
+`selectors.select` on pipes → WinError 10038).
 
 | CLI flag | SDK backend |
 |----------|-------------|
+| `fast=true` / `*-fast` model id | `ModelSelection` params `fast=true\|false` (SDK has no `composer-2.5-fast` id) |
+| `cursor-grok-4.5-{low,medium,high}` | SDK `grok-4.5` + `effort=` + `fast=` |
 | `--worktree [name]` | Git worktree at `<repo>/.cursor-headless/worktrees/<name>`; agent `cwd` set there. Left on disk after run. |
 | `--force` | `SendOptions(local=LocalSendOptions(force=True))`; write/default mode only |
+| `--continue-session` | SDK resumes stored `agent_id` (or `CURSOR_HEADLESS_SDK_AGENT_ID`); create fallback on failure |
 | `--worktree-base`, sandbox, trust, MCP approve | CLI-only until cursor-sdk exposes equivalents |
+
+### API key (SDK) + password managers
+
+MCP only reads process env `CURSOR_API_KEY` — it does not call Pass/1Password.
+Mint at [Dashboard → API Keys](https://cursor.com/dashboard/api). Inject at host start:
+
+```bash
+# cursor.env contains: CURSOR_API_KEY=pass://Keys/Cursor/password
+pass-cli run --env-file cursor.env -- codex   # or claude
+```
+
+Do not put bare `pass://` in plugin JSON unless the host resolves it (Codex/Claude
+do not). Never print the key; never pass `--api-key` on argv.
 
 ## Following progress (parent)
 
@@ -66,7 +92,8 @@ Cursor models below for delegated work.
 
 You choose the model — there is no `auto` heuristic.
 **Defaults are non-Fast:** ask/plan → `cursor-grok-4.5-high`; implement → `composer-2.5`.
-Opt into Fast with `fast=true` or a `*-fast` model id when latency matters.
+Opt into Fast with MCP `fast=true` or a `*-fast` model id when latency matters
+(both backends; SDK maps to `ModelSelection` `fast=` under the hood).
 Pick Grok tier (`low` / `medium` / `high`) by task complexity. Non-fast ids upgrade
 when `fast` is true.
 
@@ -170,8 +197,9 @@ Preflight runs automatically on cache miss (version + status + models, ~1h TTL).
 Force refresh with `--preflight`. For maximum speed on a known-good machine:
 `--skip-preflight`.
 
-Do not print API keys. Prefer login state; if needed, `CURSOR_API_KEY` in the
-environment (not `--api-key` on the command line).
+Do not print API keys. CLI backend: prefer `cursor-agent login`. SDK / auto-sdk:
+set `CURSOR_API_KEY` in the environment (password-manager inject OK; not `--api-key`
+on the command line).
 
 ## Safe Headless Defaults
 

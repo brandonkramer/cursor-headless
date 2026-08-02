@@ -1,6 +1,7 @@
 # cursor-headless
 
-Thin MCP tools + skill over `cursor-agent --print` for **Codex** and **Claude Code**.
+Thin MCP tools + skill for **Codex** and **Claude Code**. Same tools for both
+backends: **`cli`** (`cursor-agent --print`) or **`sdk`** (Python `cursor-sdk`).
 
 ## Tools
 
@@ -11,11 +12,40 @@ Thin MCP tools + skill over `cursor-agent --print` for **Codex** and **Claude Co
 | `cursor_implement` | default + force | `composer-2.5` (opt into Fast; escalate to Grok 4.5 low/medium/high by complexity) |
 | `cursor_status` | read job store | — (poll progress by `job_id`) |
 
-Pass `model` explicitly: simple → `composer-2.5` (or `*-fast` / `fast=true` when latency matters); light → `cursor-grok-4.5-low`; medium → `…-medium`; hard → `…-high`.
+Pass `model` explicitly: simple → `composer-2.5` (or `fast=true` / `*-fast` when latency matters); light → `cursor-grok-4.5-low`; medium → `…-medium`; hard → `…-high`.
 
 Parent owns **`timeout`** (default **1200s**, env `CURSOR_HEADLESS_TIMEOUT`). Raise for broad maps; on timeout treat as no result — narrow or raise `timeout` and retry.
 
-**Progress:** MCP runs use `stream-json` + `notifications/progress` (when the host forwards them). Every run returns a structured envelope with `job_id` + `progress_summary`. Poll `cursor_status(job_id)` when the host allows parallel tools. Backend: auto **`sdk`** when `CURSOR_API_KEY` is set (else **`cli`**); override with `backend=` or `CURSOR_HEADLESS_BACKEND`. MCP `uv` includes `cursor-sdk`.
+**Progress:** MCP runs use `stream-json` + `notifications/progress` (when the host forwards them). Every run returns a structured envelope with `job_id` + `progress_summary`. Poll `cursor_status(job_id)` when the host allows parallel tools.
+
+## Backend (CLI vs SDK)
+
+Same MCP surface either way (`fast`, `model`, `worktree`, `continue_session`, …).
+
+| Order | Rule |
+|-------|------|
+| 1 | Per-call `backend="cli"\|"sdk"` |
+| 2 | Env `CURSOR_HEADLESS_BACKEND` |
+| 3 | **Auto:** `sdk` if `CURSOR_API_KEY` is set, else `cli` |
+
+| Backend | Needs | Notes |
+|---------|-------|-------|
+| `cli` | `cursor-agent` on PATH (login) | Default without API key |
+| `sdk` | `CURSOR_API_KEY` (`crsr_…` from [Dashboard → API Keys](https://cursor.com/dashboard/api)) | MCP `uv` launches with `--with cursor-sdk` |
+
+**Fast:** MCP `fast=true` (or a `*-fast` model id) works on both backends. CLI adds `--fast`; SDK maps to `ModelSelection` params (`fast=true|false`). Grok CLI ids (`cursor-grok-4.5-{low,medium,high}`) become SDK `grok-4.5` + `effort=` + `fast=`.
+
+**API key from a password manager:** MCP only reads `CURSOR_API_KEY` in the process env. Inject with e.g. Proton Pass:
+
+```bash
+# cursor.env — reference only (no secret in git)
+# CURSOR_API_KEY=pass://Keys/Cursor/password
+pass-cli run --env-file cursor.env -- codex   # or claude
+```
+
+Bare `pass://` inside plugin JSON is not resolved — wrap the host or set a real env value.
+
+**Windows:** live SDK works via an in-process Bridge discovery patch (upstream `select()` / WinError 10038). Prefer MCP `cursor_*` over raw `cursor-agent` in a CP-1252 console.
 
 ## Slash commands (Claude Code + Codex)
 
@@ -60,17 +90,16 @@ Stop with `Esc` while waiting, or ask to cancel the cron job. For durable unatte
 - `workflows/` — Claude Code dynamic workflows (`implement`, `review-loop`)
 - `skills/cursor-headless/` — shared routing skill + CLI wrapper
 - `src/cursor_headless_mcp.py` — FastMCP facade
+- `src/runner.py` — backend auto-select (`cli` / `sdk`)
+- `src/sdk_runner.py` / `sdk_bridge_patch.py` — SDK path + Windows Bridge fix
 - `bin/cursor-headless-mcp` — optional launcher
 
-Requires `uv` and `cursor-agent` on PATH.
+Requires **`uv`**. For CLI backend also **`cursor-agent`** on PATH; for SDK set
+`CURSOR_API_KEY` (package pulled by MCP `--with cursor-sdk`).
 
-**Windows note:** console code page is often CP-1252. Prefer MCP `cursor_*` tools
-(UTF-8 stdio + wrapper). Direct `cursor-agent` in a legacy console can fail on
-non-ASCII output; the UTF-8 wrapper/MCP path is the supported fallback.
-
-Note: MCP launch pins `mcp>=1.9,<2` and `--with cursor-sdk` — MCP Python SDK 2.x removed `mcp.server.fastmcp`; SDK backend is available in the MCP env without a separate global install.
-After updating, reinstall the Codex plugin (`codex plugin remove` / `add`) so the
-versioned cache under `~/.codex/plugins/cache/` picks up the pin.
+MCP launch pins `mcp>=1.9,<2` and `--with cursor-sdk` (MCP Python SDK 2.x removed
+`mcp.server.fastmcp`). After updating, reinstall the Codex plugin
+(`codex plugin remove` / `add`) so `~/.codex/plugins/cache/` picks up the pin.
 
 ## Install (Codex)
 
