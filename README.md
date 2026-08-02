@@ -12,6 +12,8 @@ Thin MCP tools + skill over `cursor-agent --print` for **Codex** and **Claude Co
 
 Pass `model` explicitly: simple → `composer-2.5` (or `*-fast` / `fast=true` when latency matters); light → `cursor-grok-4.5-low`; medium → `…-medium`; hard → `…-high`.
 
+Parent owns **`timeout`** (default **1200s**, env `CURSOR_HEADLESS_TIMEOUT`). Raise for broad maps; on timeout treat as no result — narrow or raise `timeout` and retry.
+
 ## Slash commands (Claude Code + Codex)
 
 Parent chat orchestrates; Cursor workers execute.
@@ -58,6 +60,10 @@ Stop with `Esc` while waiting, or ask to cancel the cron job. For durable unatte
 - `bin/cursor-headless-mcp` — optional launcher
 
 Requires `uv` and `cursor-agent` on PATH.
+
+**Windows note:** console code page is often CP-1252. Prefer MCP `cursor_*` tools
+(UTF-8 stdio + wrapper). Direct `cursor-agent` in a legacy console can fail on
+non-ASCII output; the UTF-8 wrapper/MCP path is the supported fallback.
 
 Note: pin `mcp>=1.9,<2` — MCP Python SDK 2.x removed `mcp.server.fastmcp`.
 After updating, reinstall the Codex plugin (`codex plugin remove` / `add`) so the

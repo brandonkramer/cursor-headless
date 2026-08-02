@@ -66,12 +66,13 @@ when `fast` is true.
 MCP (preferred):
 
 ```text
-cursor_ask(prompt="…", cwd="$PWD")  # grok 4.5 high (default)
-cursor_ask(prompt="…", cwd="$PWD", model="cursor-grok-4.5-medium", fast=true)
+cursor_ask(prompt="…", cwd="$PWD")  # grok 4.5 high, timeout 1200
+cursor_ask(prompt="…", cwd="$PWD", model="cursor-grok-4.5-medium", fast=true, timeout=600)
 cursor_plan(prompt="…", cwd="$PWD", model="cursor-grok-4.5-low")  # light plan
+cursor_plan(prompt="…", cwd="$PWD", model="composer-2.5", fast=true, timeout=1800)  # broad map
 cursor_implement(prompt="…", cwd="$PWD", worktree="cursor-task")  # composer-2.5 (simple)
 cursor_implement(prompt="…", cwd="$PWD", fast=true)  # composer-2.5-fast when speed matters
-cursor_implement(prompt="…", cwd="$PWD", model="cursor-grok-4.5-medium-fast")  # medium work
+cursor_implement(prompt="…", cwd="$PWD", model="cursor-grok-4.5-medium-fast", timeout=1500)
 ```
 
 CLI fallback (same wrapper the MCP uses):
@@ -92,12 +93,49 @@ python3 "$PLUGIN_ROOT/skills/cursor-headless/scripts/cursor_headless.py" --cwd "
 5. Prefer `--worktree` for writes unless the user wants the current tree edited.
 6. Multi-step on the same task → `--continue-session` / `--resume` (faster than new sessions).
 7. Skip repeated preflight after the first success (wrapper caches ~1h).
+8. **You (parent) set `timeout`** per call — see process below.
+
+## Parent orchestration process (required)
+
+Parent (Codex / Claude Code) owns tool, model, scope, and **timeout**. Cursor is a
+worker; timeout ≠ completed audit.
+
+1. **Decompose** into narrow slices (paths + done criteria + out-of-scope).
+2. **Pick tool + model + timeout** per slice before launching.
+3. **Launch** via MCP (`timeout=` optional; default **1200s**) or wrapper (`--timeout`).
+4. **On timeout / empty / error** → treat as **no result**. Do not invent findings.
+5. **Retry** by narrowing scope **or** raising `timeout` (e.g. 1800). Prefer narrow first.
+6. **Integrate** worker evidence; parent remains final reviewer.
+
+### Timeout guidance (parent-controlled)
+
+| Slice shape | Suggested `timeout` | Notes |
+|-------------|---------------------|-------|
+| Tiny Q&A / one-file | `300`–`600` | Keep default only if unsure |
+| Normal plan/implement slice | `900`–`1200` | Default **1200** |
+| Broad multi-app inventory / deep map | `1500`–`1800` **or split** | Prefer split into path-bounded slices |
+| Claude Code Bash shelling wrapper | stay ≤ ~480 if Bash hard-caps ~10m | Prefer MCP from parent; see reap trap |
+
+Env override for the default (MCP + CLI): `CURSOR_HEADLESS_TIMEOUT` (seconds).
+
+```text
+# Parent raises timeout for a known-broad map
+cursor_plan(prompt="…", cwd="$PWD", model="composer-2.5", fast=true, timeout=1800)
+
+# Prefer this over a single broad 30-min run
+cursor_plan(prompt="Map overlaps under apps/catster-admin/server only…", cwd="$PWD", timeout=900)
+cursor_plan(prompt="Map overlaps under apps/dogster-admin/server only…", cwd="$PWD", timeout=900)
+```
+
+Mechanical duplicate/file/import maps → prefer `composer-2.5` (+ `fast=true`) over
+Grok High unless judgment is required.
 
 ## Performance defaults (keep it fast)
 
 | Lever | Default | Why |
 |-------|---------|-----|
 | Model | ask/plan: `cursor-grok-4.5-high`; implement: `composer-2.5` | Mode-aware defaults; opt into Fast when latency matters |
+| Timeout | **1200s** (`CURSOR_HEADLESS_TIMEOUT` / MCP `timeout=`) | Parent raises/lowers per slice; timeout = no result |
 | Output | `text` | Avoid JSON parse/pretty cost |
 | Stdin | closed (`DEVNULL`) | Prevents stdin-wait hangs |
 | Preflight | cached 1h | Avoid N× `cursor-agent` cold starts |
@@ -139,7 +177,7 @@ Defaults unless the task needs more:
 - `--mode ask` or `plan` for read-only; `default` + `--force` only for approved writes
 - `--output-format text` (use `json` / `stream-json` when parsing)
 - `--sandbox enabled --trust --workspace "$PWD"`
-- Wrapper `--timeout 600`
+- Wrapper `--timeout 1200` (parent may pass higher/lower; env `CURSOR_HEADLESS_TIMEOUT`)
 
 Do **not** use `--force` / `--yolo` unless the user approved writes or the run is
 in a disposable worktree.
@@ -223,7 +261,7 @@ Useful wrapper flags:
 | `--prompt-file` | Load prompt text (wrapper still stages `CURSOR_TASK-*` for cursor-agent) |
 | `--require-diff` | Fail write runs with clean `git status --porcelain` |
 | `--inline-prompt` | Force argv delivery (one-line smoke only; unsafe on Windows) |
-| `--timeout` | Default 600s (watch Bash 10m reap — see trap below) |
+| `--timeout` | Default **1200s** (parent-adjustable; env `CURSOR_HEADLESS_TIMEOUT`; watch Bash 10m reap) |
 | `--raw` / `--pretty-json` | Output control |
 | `--continue-session` / `--resume` | Faster multi-step |
 | `--approve-mcps` | Headless MCP approval |
@@ -275,7 +313,13 @@ one-line bootstrap. Unique names unlock parallel slices; do **not** share a sing
 MCP tools write a temp `--prompt-file` first (same reason). Prefer MCP or the
 wrapper; do not paste multiline prompts straight onto `cursor-agent`.
 
-Subprocess decode uses `encoding=utf-8, errors=replace` — no need for `PYTHONUTF8=1`.
+Subprocess decode uses `encoding=utf-8, errors=replace`. Wrapper/MCP also force
+`PYTHONUTF8=1` / `PYTHONIOENCODING=utf-8` and `safe_print` so Windows **CP-1252**
+consoles do not crash on em-dashes / fancy quotes from Cursor output.
+
+**Windows:** prefer MCP `cursor_*` (stdio UTF-8) over shelling `cursor-agent` into a
+legacy console. If a direct/shell path hits `charmap` / CP-1252 encode errors, retry
+via MCP or `cursor_headless.py` (UTF-8 path) — treat the failed shell path as no result.
 
 After every run the wrapper appends `git status --porcelain` + `git diff --stat HEAD`.
 Pass `--require-diff` / MCP `require_diff=true` on write runs to fail clean-tree "success".
@@ -288,13 +332,17 @@ subagent that shells `cursor_headless.py` (or MCP that waits on it) gets
 cap — while Cursor may still be running elsewhere or may have fabricated a completion
 report.
 
+Wrapper default is **1200s**; that only helps when the **host** waits that long
+(Codex MCP / parent MCP). Claude Bash shelling can still reap earlier.
+
 **Do this instead:**
 
-1. Launch long Cursor writes from the **parent session** background Bash (or raise
-   the tool timeout), not from a Workflow worker that inherits the 10m cap.
+1. Launch long Cursor runs from the **parent session** via MCP (pass `timeout=`),
+   not from a Workflow worker that inherits a ~10m Bash cap.
 2. Never trust Cursor's narrative alone — check wrapper git evidence / `git status`.
-3. Keep slices under ~8 minutes wall, or use `--worktree` + unique task files and
-   poll from the parent.
+3. Prefer path-bounded slices under ~8–15 minutes wall, or use `--worktree` + unique
+   task files and poll from the parent.
+4. On timeout: **no result** → narrow scope or raise `timeout` and retry once.
 
 Workflow scripts in this plugin are plain ASCII + LF only (CRLF / fancy Unicode
 breaks Claude's approval dialog: "control characters that would be hidden").

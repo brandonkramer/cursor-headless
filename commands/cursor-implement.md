@@ -34,8 +34,9 @@ Workflow({
 })
 ```
 
-Optional: pass pre-built `slices: [{goal, tool, model, worktree?, fast?}]` if you
-already decomposed. Otherwise the workflow decomposes, then fans out workers.
+Optional: pass pre-built
+`slices: [{goal, tool, model, worktree?, fast?, timeout?}]` if you already
+decomposed. Otherwise the workflow decomposes, then fans out workers.
 
 Tell the user a short heads-up (workflow fans out multiple agents) before
 launching. When it returns:
@@ -70,13 +71,19 @@ Fan out **multiple** `cursor_*` MCP calls **in parallel in the same turn**.
 **Bias cheap:** prefer `composer-2.5` + `fast=true` unless the slice clearly needs
 Grok judgment. Always pass `cwd`. Prefer `worktree` on implement when isolation helps.
 
+**Timeout (parent-controlled):** default **1200s**. Set `timeout=` per call — raise
+for broad explore maps (`1500`–`1800`) or split into path-bounded slices. On
+`error: timed out` → **no result**; narrow or raise `timeout` and retry. Do not
+invent findings from a timeout.
+
 ### Core workflow
 
 1. **Decompose** into independent slices (aim for **3+ workers** when possible).
-2. **Pick tool + model** per slice.
+2. **Pick tool + model + timeout** per slice.
 3. **Launch workers in one message** — multiple `cursor_*` calls, narrow prompts.
 4. **Parallel by default** — serialize only when B depends on A.
 5. **Integrate** worker outputs — merge summaries; parent stays lean.
+6. **Timeouts** → treat as failed/empty; retry narrower or with higher `timeout`.
 
 ### Prompt shape for each worker
 
@@ -91,6 +98,8 @@ Do not: restate the whole codebase; keep the reply short.
 ### Anti-patterns
 
 - Always picking grok-high — bias composer / low / medium first.
+- One giant unbounded map that burns the timeout — split by path.
+- Treating timeout as a completed audit.
 - Parent doing heavy file reads or implementing in parent context.
 - Using Cursor IDE Task tool names — use MCP `cursor_*` only.
 

@@ -32,9 +32,62 @@ PREFLIGHT_CACHE = Path(
     )
 )
 PREFLIGHT_TTL_SEC = float(os.environ.get("CURSOR_HEADLESS_PREFLIGHT_TTL", "3600"))
+DEFAULT_TIMEOUT_SEC = float(os.environ.get("CURSOR_HEADLESS_TIMEOUT", "1200"))
 
 # Windows .cmd shims mangle newlines in argv; always stage multiline / win32 prompts.
+# Always decode child bytes as UTF-8 (cursor-agent emits UTF-8; Windows consoles are often CP-1252).
 _SUBPROCESS_TEXT = {"text": True, "encoding": "utf-8", "errors": "replace"}
+
+
+def configure_utf8_stdio() -> None:
+    """Prefer UTF-8 on stdio so em-dashes / fancy quotes don't crash CP-1252 consoles."""
+    os.environ.setdefault("PYTHONUTF8", "1")
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None:
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError, AttributeError):
+                pass
+
+
+def safe_print(*args: object, sep: str = " ", end: str = "\n", file: object | None = None, flush: bool = False) -> None:
+    """print() that never raises UnicodeEncodeError on legacy Windows code pages."""
+    target = sys.stdout if file is None else file
+    try:
+        print(*args, sep=sep, end=end, file=target, flush=flush)
+        return
+    except UnicodeEncodeError:
+        pass
+    encoding = getattr(target, "encoding", None) or "utf-8"
+    payload = (sep.join(str(a) for a in args) + end).encode(encoding, errors="replace")
+    buf = getattr(target, "buffer", None)
+    if buf is not None:
+        buf.write(payload)
+        if flush:
+            buf.flush()
+        return
+    # TextIO / non-binary fallback
+    text = payload.decode(encoding, errors="replace")
+    write = getattr(target, "write", None)
+    if callable(write):
+        write(text)
+        if flush:
+            flush_fn = getattr(target, "flush", None)
+            if callable(flush_fn):
+                flush_fn()
+
+
+def child_env() -> dict[str, str]:
+    """Env for cursor-agent / git children — force UTF-8 I/O on Windows Python helpers."""
+    env = os.environ.copy()
+    env.setdefault("PYTHONUTF8", "1")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    return env
 
 
 def parse_args() -> argparse.Namespace:
@@ -68,7 +121,15 @@ def parse_args() -> argparse.Namespace:
         choices=["enabled", "disabled"],
         help="Cursor sandbox (default: disabled on Windows — sandbox is macOS/Linux only).",
     )
-    parser.add_argument("--timeout", type=float, default=600.0, help="Maximum runtime in seconds.")
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=DEFAULT_TIMEOUT_SEC,
+        help=(
+            "Maximum runtime in seconds (default 1200, or CURSOR_HEADLESS_TIMEOUT). "
+            "Parent/orchestrator should raise for broad explore maps or lower for tiny slices."
+        ),
+    )
     parser.add_argument("--add-dir", action="append", default=[], help="Additional workspace root.")
     parser.add_argument("--plugin-dir", action="append", default=[], help="Local Cursor plugin directory.")
     parser.add_argument("--worktree", nargs="?", const="", help="Run in an isolated Cursor worktree.")
@@ -157,6 +218,7 @@ def run_quiet(cmd: list[str], timeout: float = 60.0) -> subprocess.CompletedProc
         check=False,
         timeout=timeout,
         stdin=subprocess.DEVNULL,
+        env=child_env(),
         **_SUBPROCESS_TEXT,
     )
 
@@ -314,6 +376,7 @@ def git_evidence(cwd: str) -> tuple[str, bool]:
             check=False,
             timeout=30,
             stdin=subprocess.DEVNULL,
+            env=child_env(),
             **_SUBPROCESS_TEXT,
         )
         ds = subprocess.run(
@@ -323,6 +386,7 @@ def git_evidence(cwd: str) -> tuple[str, bool]:
             check=False,
             timeout=30,
             stdin=subprocess.DEVNULL,
+            env=child_env(),
             **_SUBPROCESS_TEXT,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -348,6 +412,7 @@ def run_streaming(cmd: list[str], cwd: str, timeout: float) -> int:
         stdout=subprocess.PIPE,
         stderr=None,
         bufsize=1,
+        env=child_env(),
         **_SUBPROCESS_TEXT,
     )
     assert proc.stdout is not None
@@ -359,23 +424,28 @@ def run_streaming(cmd: list[str], cwd: str, timeout: float) -> int:
         remaining = timeout - elapsed
         if remaining <= 0:
             proc.kill()
-            print(f"cursor-agent timed out after {timeout:g}s", file=sys.stderr)
+            safe_print(
+                f"cursor-agent timed out after {timeout:g}s — treat as no result; "
+                "retry narrower or raise --timeout / MCP timeout=",
+                file=sys.stderr,
+            )
             return 124
 
         for key, _ in selector.select(timeout=min(0.25, remaining)):
             line = key.fileobj.readline()
             if line:
-                print(line, end="", flush=True)
+                safe_print(line, end="", flush=True)
             else:
                 selector.unregister(key.fileobj)
 
         if proc.poll() is not None:
             for line in proc.stdout:
-                print(line, end="", flush=True)
+                safe_print(line, end="", flush=True)
             return proc.returncode
 
 
 def main() -> int:
+    configure_utf8_stdio()
     args = parse_args()
     prompt = load_prompt(args)
     default_model = "composer-2.5" if args.mode == "default" else "cursor-grok-4.5-high"
@@ -403,26 +473,31 @@ def main() -> int:
                     check=False,
                     timeout=args.timeout,
                     stdin=subprocess.DEVNULL,
+                    env=child_env(),
                     **_SUBPROCESS_TEXT,
                 )
             except subprocess.TimeoutExpired as exc:
                 if exc.stdout:
-                    print(exc.stdout, end="")
+                    safe_print(exc.stdout, end="")
                 if exc.stderr:
-                    print(exc.stderr, file=sys.stderr, end="")
-                print(f"cursor-agent timed out after {args.timeout:g}s", file=sys.stderr)
+                    safe_print(exc.stderr, file=sys.stderr, end="")
+                safe_print(
+                    f"cursor-agent timed out after {args.timeout:g}s — treat as no result; "
+                    "retry narrower or raise --timeout / MCP timeout=",
+                    file=sys.stderr,
+                )
                 exit_code = 124
             else:
                 if proc.stderr:
-                    print(proc.stderr, file=sys.stderr, end="")
+                    safe_print(proc.stderr, file=sys.stderr, end="")
 
                 if args.raw or args.output_format != "json":
-                    print(proc.stdout, end="")
+                    safe_print(proc.stdout, end="")
                 else:
                     try:
-                        print(summarize_json(proc.stdout, pretty=args.pretty_json))
+                        safe_print(summarize_json(proc.stdout, pretty=args.pretty_json))
                     except json.JSONDecodeError:
-                        print(proc.stdout, end="")
+                        safe_print(proc.stdout, end="")
 
                 exit_code = proc.returncode
     finally:
@@ -433,10 +508,10 @@ def main() -> int:
                 pass
 
     evidence, has_diff = git_evidence(str(workspace))
-    print(evidence, end="")
+    safe_print(evidence, end="")
 
     if args.require_diff and args.mode == "default" and exit_code == 0 and not has_diff:
-        print(
+        safe_print(
             "error: --require-diff set but git status --porcelain is clean "
             "(Cursor report claimed success with no tree changes)",
             file=sys.stderr,
@@ -447,4 +522,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    configure_utf8_stdio()
     raise SystemExit(main())

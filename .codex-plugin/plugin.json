@@ -1,6 +1,6 @@
 {
   "name": "cursor-headless",
-  "version": "0.2.6",
+  "version": "0.2.8",
   "description": "Delegate to Cursor Agent from Claude Code or Codex via MCP (ask/plan/implement). Claude workflows + /cursor-loop; slash commands for both hosts.",
   "license": "MIT",
   "keywords": ["cursor", "cursor-agent", "composer", "grok", "orchestration", "claude"],
@@ -18,7 +18,11 @@
         "python",
         "src/cursor_headless_mcp.py"
       ],
-      "cwd": "."
+      "cwd": ".",
+      "env": {
+        "PYTHONUTF8": "1",
+        "PYTHONIOENCODING": "utf-8"
+      }
     }
   },
   "interface": {
@@ -31,6 +35,8 @@
       "Use cursor_ask with Grok 4.5 low/medium/high (opt into Fast) by complexity.",
       "Use cursor_plan with Grok 4.5 low/medium/high (opt into Fast) by complexity.",
       "Use cursor_implement with composer-2.5 (opt into Fast) or Grok 4.5 low/medium/high by complexity.",
+      "You (parent) set timeout per call (default 1200s). Raise for broad maps; on timeout treat as no result and narrow or raise timeout.",
+      "On Windows prefer MCP cursor_* tools (UTF-8) over shelling cursor-agent into a CP-1252 console.",
       "Use /cursor-implement to fan out parallel Cursor workers from Codex.",
       "Use /cursor-review-loop for parent review → Cursor fix → re-review until clean.",
       "On Claude Code, use /cursor-loop to arm /loop with cursor-headless implement/review/babysit ticks."

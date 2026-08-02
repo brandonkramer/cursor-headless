@@ -9,6 +9,10 @@
       "3.14",
       "python",
       "${CLAUDE_PLUGIN_ROOT}/src/cursor_headless_mcp.py"
-    ]
+    ],
+    "env": {
+      "PYTHONUTF8": "1",
+      "PYTHONIOENCODING": "utf-8"
+    }
   }
 }

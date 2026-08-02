@@ -3,7 +3,7 @@ export const meta = {
   description:
     'Fan out cursor-headless workers (cursor_ask/plan/implement) for a clear-spec task; Claude parent integrates',
   whenToUse:
-    'Invoked by /cursor-implement when the Workflow tool is available. Requires args {task, cwd}. Optional slices: [{goal, tool?, model?, worktree?}]. Returns worker summaries for the parent to integrate.',
+    'Invoked by /cursor-implement when the Workflow tool is available. Requires args {task, cwd}. Optional slices: [{goal, tool?, model?, worktree?, timeout?}]. Returns worker summaries for the parent to integrate.',
   phases: [
     { title: 'Decompose', detail: 'split task into independent slices if not provided' },
     { title: 'Workers', detail: 'one thin Claude agent per slice; each must call cursor_* MCP' },
@@ -63,7 +63,12 @@ function normalizeSlice(s, i) {
     s.fast === undefined || s.fast === null
       ? model.endsWith('-fast') || model.startsWith('composer')
       : Boolean(s.fast)
-  return { goal, tool, model, worktree, fast }
+  let timeout = null
+  if (s.timeout !== undefined && s.timeout !== null && s.timeout !== '') {
+    const n = Number(s.timeout)
+    if (Number.isFinite(n) && n > 0) timeout = n
+  }
+  return { goal, tool, model, worktree, fast, timeout }
 }
 
 const SLICE_SCHEMA = {
@@ -84,6 +89,7 @@ const SLICE_SCHEMA = {
           model: { type: 'string' },
           worktree: { type: 'string' },
           fast: { type: 'boolean' },
+          timeout: { type: 'number' },
         },
       },
     },
@@ -146,6 +152,7 @@ Routing:
 - Models: composer-2.5 (mechanical/default), cursor-grok-4.5-low|medium|high by complexity
 - Prefer fast=true / *-fast when latency matters
 - Suggest a short worktree name for each implement slice
+- Optional timeout seconds per slice (default 1200 via MCP); raise for broad maps
 
 Return JSON slices only.`,
     {
@@ -185,6 +192,7 @@ ${JSON.stringify(
     model: slice.model,
     fast: slice.fast,
     cwd,
+    ...(slice.timeout != null ? { timeout: slice.timeout } : {}),
     ...(slice.tool === 'cursor_implement' && slice.worktree
       ? { worktree: slice.worktree }
       : {}),

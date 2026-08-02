@@ -98,10 +98,14 @@ Findings:
 - [blocker|major|nit] path:… — why / expected
 ```
 
+Pass `timeout=` on fix workers when the change set is large (default 1200s).
+Timeout → no result; narrow the fix slice or raise timeout.
+
 ### Anti-patterns
 
 - Delegating review to Cursor
 - Parent implementing the full fix list
 - Always picking grok-high
+- Treating a timed-out Cursor fix as applied
 
 Begin: Method A if Workflow exists; else Method B.

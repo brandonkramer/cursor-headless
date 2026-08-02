@@ -14,9 +14,38 @@ from mcp.server.fastmcp import FastMCP
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 WRAPPER = PLUGIN_ROOT / "skills" / "cursor-headless" / "scripts" / "cursor_headless.py"
 
+# Keep in sync with cursor_headless.py DEFAULT_TIMEOUT_SEC.
+DEFAULT_TIMEOUT_SEC = float(os.environ.get("CURSOR_HEADLESS_TIMEOUT", "1200"))
+
 mcp = FastMCP("cursor-headless")
 
 _SUBPROCESS_TEXT = {"text": True, "encoding": "utf-8", "errors": "replace"}
+
+
+def _configure_utf8_stdio() -> None:
+    """Avoid Windows CP-1252 UnicodeEncodeError when tool results contain non-ASCII."""
+    os.environ.setdefault("PYTHONUTF8", "1")
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None:
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError, AttributeError):
+                pass
+
+
+def _child_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.setdefault("PYTHONUTF8", "1")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    return env
+
+
+_configure_utf8_stdio()
 
 
 def _run_wrapper(
@@ -86,11 +115,15 @@ def _run_wrapper(
                 check=False,
                 timeout=timeout + 30,
                 stdin=subprocess.DEVNULL,
+                env=_child_env(),
                 **_SUBPROCESS_TEXT,
             )
         except subprocess.TimeoutExpired as exc:
             out = (exc.stdout or "") + (exc.stderr or "")
-            return f"error: timed out after {timeout:g}s\n{out}".strip()
+            return (
+                f"error: timed out after {timeout:g}s — treat as no result; "
+                f"retry with a narrower prompt or pass timeout=<higher seconds>\n{out}"
+            ).strip()
 
         parts = []
         if proc.stdout:
@@ -116,12 +149,16 @@ def cursor_ask(
     fast: bool = False,
     skip_preflight: bool = True,
     continue_session: bool = False,
-    timeout: float = 600,
+    timeout: float = DEFAULT_TIMEOUT_SEC,
 ) -> str:
     """Read-only Cursor ask (--mode ask).
 
     Default model cursor-grok-4.5-high; caller picks low|medium|high and whether to use Fast
     (fast=true or *-fast id). Pass composer-2.5 for cheaper mechanical Q&A.
+
+    Parent/orchestrator owns timeout (default 1200s, or CURSOR_HEADLESS_TIMEOUT).
+    Raise for broad multi-app maps; lower for tiny one-shot Q&A. On timeout: no result —
+    narrow the prompt or raise timeout and retry.
     """
     return _run_wrapper(
         prompt=prompt,
@@ -147,12 +184,16 @@ def cursor_plan(
     fast: bool = False,
     skip_preflight: bool = True,
     continue_session: bool = False,
-    timeout: float = 600,
+    timeout: float = DEFAULT_TIMEOUT_SEC,
 ) -> str:
     """Read-only Cursor plan/explore (--mode plan).
 
     Default model cursor-grok-4.5-high; caller picks low|medium|high and whether to use Fast
     (fast=true or *-fast id). Pass composer-2.5 for cheaper plans.
+
+    Parent/orchestrator owns timeout (default 1200s, or CURSOR_HEADLESS_TIMEOUT).
+    Broad duplicate/consumer inventory often needs 1200–1800 or a narrower path slice.
+    On timeout: treat as no result — do not invent findings; narrow or raise timeout.
     """
     return _run_wrapper(
         prompt=prompt,
@@ -180,7 +221,7 @@ def cursor_implement(
     force: bool = True,
     skip_preflight: bool = True,
     continue_session: bool = False,
-    timeout: float = 600,
+    timeout: float = DEFAULT_TIMEOUT_SEC,
     require_diff: bool = False,
 ) -> str:
     """Write-capable Cursor implementation (--mode default).
@@ -193,6 +234,9 @@ def cursor_implement(
 
     Set worktree for isolation; force defaults true. `fast` defaults false — opt in to upgrade to *-fast.
     Set require_diff=true to fail when Cursor claims success but git status is clean.
+
+    Parent/orchestrator owns timeout (default 1200s, or CURSOR_HEADLESS_TIMEOUT).
+    Raise for large write slices; prefer smaller slices when possible. On timeout: no result.
     """
     return _run_wrapper(
         prompt=prompt,
