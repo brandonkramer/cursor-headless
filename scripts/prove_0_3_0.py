@@ -96,26 +96,30 @@ def prove_cli_runner_fake() -> None:
         td_path = Path(td)
         fake_bin = td_path / "bin"
         fake_bin.mkdir()
+        impl = (
+            "#!/usr/bin/env python3\n"
+            "import json, sys\n"
+            "events = [\n"
+            '  {"type":"system","subtype":"init","model":"fake","session_id":"s1"},\n'
+            '  {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]}},\n'
+            '  {"type":"result","subtype":"success","is_error":False,"result":"CURSOR_PROVE_OK","duration_ms":1,"session_id":"s1"},\n'
+            "]\n"
+            "for e in events:\n"
+            "    print(json.dumps(e), flush=True)\n"
+            "sys.exit(0)\n"
+        )
         if os.name == "nt":
+            py_path = fake_bin / "cursor-agent-impl.py"
+            py_path.write_text(impl, encoding="utf-8", newline="\n")
             fake = fake_bin / "cursor-agent.cmd"
-            # Emit NDJSON then exit 0
             fake.write_text(
-                "@echo off\n"
-                "echo {\"type\":\"system\",\"subtype\":\"init\",\"model\":\"fake\",\"session_id\":\"s1\"}\n"
-                "echo {\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}}\n"
-                "echo {\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"CURSOR_PROVE_OK\",\"duration_ms\":1,\"session_id\":\"s1\"}\n",
+                f'@echo off\r\n"{sys.executable}" "{py_path}" %*\r\n',
                 encoding="utf-8",
+                newline="\r\n",
             )
         else:
             fake = fake_bin / "cursor-agent"
-            fake.write_text(
-                "#!/usr/bin/env bash\n"
-                "printf '%s\\n' "
-                "'{\"type\":\"system\",\"subtype\":\"init\",\"model\":\"fake\",\"session_id\":\"s1\"}' "
-                "'{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}}' "
-                "'{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"CURSOR_PROVE_OK\",\"duration_ms\":1,\"session_id\":\"s1\"}'\n",
-                encoding="utf-8",
-            )
+            fake.write_text(impl, encoding="utf-8")
             fake.chmod(0o755)
 
         env = os.environ.copy()

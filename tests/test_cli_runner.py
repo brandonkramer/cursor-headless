@@ -23,12 +23,20 @@ def _write_fake_agent(
     *,
     body: str,
 ) -> None:
-    agent_path = bin_dir / ("cursor-agent.cmd" if os.name == "nt" else "cursor-agent")
-    agent_path.write_text(
-        textwrap.dedent(body).lstrip(),
-        encoding="utf-8",
-        newline="\n",
-    )
+    """Install a fake cursor-agent on PATH (Python script; .cmd launcher on Windows)."""
+    script = textwrap.dedent(body).lstrip()
+    if os.name == "nt":
+        py_path = bin_dir / "cursor-agent-impl.py"
+        py_path.write_text(script, encoding="utf-8", newline="\n")
+        cmd_path = bin_dir / "cursor-agent.cmd"
+        cmd_path.write_text(
+            f'@echo off\r\n"{sys.executable}" "{py_path}" %*\r\n',
+            encoding="utf-8",
+            newline="\r\n",
+        )
+        return
+    agent_path = bin_dir / "cursor-agent"
+    agent_path.write_text(script, encoding="utf-8", newline="\n")
     agent_path.chmod(agent_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
