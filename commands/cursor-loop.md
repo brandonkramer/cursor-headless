@@ -30,7 +30,7 @@ Examples the user might type:
 ## Preconditions
 
 - **cursor-headless** MCP tools available (`cursor_ask` / `cursor_plan` / `cursor_implement`)
-- Dynamic workflows optional — ticks can use `/cursor-implement` or `/cursor-review-loop`
+- Dynamic workflows optional — ticks can use `/cursor-implement` or `/cursor-review`
   (Workflow when available, else direct MCP)
 - Loops are **session-scoped**: they stop when the session ends (resume may restore
   unexpired tasks). Esc while waiting cancels a `/loop` wakeup.
@@ -47,7 +47,7 @@ equivalent). Prefer invoking `/loop` so the user sees the same UX.
 
 Each tick should:
 
-1. Run a **scoped** `/cursor-review-loop` on the stated scope (or inferred chat scope)
+1. Run a **scoped** `/cursor-review` on the stated scope (or inferred chat scope)
 2. If verdict is clean (`pass` / `pass-with-notes`, no blocker/major): **stop the loop**
    (`ScheduleWakeup` stop / cancel the cron job) and report done in one line
 3. If still dirty: summarize what was fixed this tick; wait for next interval
@@ -55,7 +55,7 @@ Each tick should:
 Tick prompt shape (pass this to `/loop`):
 
 ```text
-Run /cursor-review-loop on: <SCOPE>
+Run /cursor-review on: <SCOPE>
 cwd must be the current workspace root.
 Use cursor-headless MCP for fixes only; you own the review.
 If clean (no blocker/major), stop this scheduled loop and say DONE.

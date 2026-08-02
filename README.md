@@ -65,7 +65,7 @@ Parent chat orchestrates; Cursor workers execute.
 | Command | What it does |
 |---------|----------------|
 | `/cursor-implement` | You plan/sequence/integrate; fan out parallel `cursor_ask` / `cursor_plan` / `cursor_implement` workers |
-| `/cursor-review-loop` | You review → Cursor workers fix → you review again (max 5 iterations) |
+| `/cursor-review` | You review → Cursor workers fix → you review again (max 5 iterations) |
 | `/cursor-loop` | Arm Claude `/loop` to re-run implement / review / CI babysit on an interval (Claude Code only) |
 
 ## Claude workflows (Claude Code only)
@@ -75,7 +75,7 @@ Requires Dynamic workflows (Claude Code ≥ 2.1.154; enable in `/config`).
 | Workflow | Slash / name | What it does |
 |----------|--------------|--------------|
 | `workflows/implement.js` | `/cursor-headless:implement` or via `/cursor-implement` | Decompose + fan-out thin Claude wrappers that call `cursor_*` MCP |
-| `workflows/review-loop.js` | `/cursor-headless:review-loop` or via `/cursor-review-loop` | Claude review agents ↔ `cursor_implement` fix workers (max 5) |
+| `workflows/review.js` | `/cursor-headless:review` or via `/cursor-review` | Claude review agents ↔ `cursor_implement` fix workers (max 5) |
 
 Slash commands prefer the Workflow tool when available, and fall back to direct MCP fan-out (same path Codex uses).
 
@@ -87,7 +87,7 @@ Session-scoped scheduler — machine + session must stay up. See [scheduled task
 /cursor-loop 10m review uncommitted changes
 /cursor-loop 15m implement finish remaining slices
 /cursor-loop babysit          # CI/PR comments → cursor_implement fixes
-/loop 20m /cursor-review-loop auth PR
+/loop 20m /cursor-review auth PR
 ```
 
 Stop with `Esc` while waiting, or ask to cancel the cron job. For durable unattended runs use Desktop scheduled tasks or Routines — not `/loop`.
@@ -98,7 +98,7 @@ Stop with `Esc` while waiting, or ask to cancel the cron job. For durable unatte
 - `.claude-plugin/` — Claude Code marketplace + plugin manifest
 - `.mcp.json` — Claude MCP server entry (`uv` → FastMCP)
 - `commands/` — shared slash commands (Claude + Codex)
-- `workflows/` — Claude Code dynamic workflows (`implement`, `review-loop`)
+- `workflows/` — Claude Code dynamic workflows (`implement`, `review`)
 - `skills/cursor-headless/` — shared routing skill + CLI wrapper
 - `src/cursor_headless_mcp.py` — FastMCP facade
 - `src/runner.py` — backend auto-select (`cli` / `sdk`)

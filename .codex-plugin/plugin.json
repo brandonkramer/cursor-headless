@@ -1,6 +1,6 @@
 {
   "name": "cursor-headless",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Delegate to Cursor Agent from Claude Code or Codex via MCP (ask/plan/implement). Claude workflows + /cursor-loop; slash commands for both hosts.",
   "license": "MIT",
   "keywords": ["cursor", "cursor-agent", "composer", "grok", "orchestration", "claude"],
@@ -42,7 +42,7 @@
       "Prefer Cursor SDK when an API key is configured (auto); else CLI. Same MCP tools; override with backend=.",
       "On Windows prefer MCP cursor_* tools (UTF-8) over shelling cursor-agent into a CP-1252 console.",
       "Use /cursor-implement to fan out parallel Cursor workers from Codex.",
-      "Use /cursor-review-loop for parent review → Cursor fix → re-review until clean.",
+      "Use /cursor-review for parent review → Cursor fix → re-review until clean.",
       "On Claude Code, use /cursor-loop to arm /loop with cursor-headless implement/review/babysit ticks."
     ]
   }

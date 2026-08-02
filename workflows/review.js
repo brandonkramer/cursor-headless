@@ -1,9 +1,9 @@
 export const meta = {
-  name: 'review-loop',
+  name: 'review',
   description:
     'Claude reviews in-loop; cursor-headless workers fix blocker/major findings until clean or cap',
   whenToUse:
-    'Invoked by /cursor-review-loop when the Workflow tool is available. Requires args {scope, cwd}. Optional maxIterations (default 5). Review stays on Claude agents; fixes use cursor_implement MCP.',
+    'Invoked by /cursor-review when the Workflow tool is available. Requires args {scope, cwd}. Optional maxIterations (default 5). Review stays on Claude agents; fixes use cursor_implement MCP.',
   phases: [
     { title: 'Review', detail: 'Claude reviewer produces verdict + findings' },
     { title: 'Fix', detail: 'cursor_implement workers address blocker/major findings' },
@@ -25,11 +25,11 @@ const scope = ARGS && ARGS.scope
 const cwd = ARGS && ARGS.cwd
 if (!scope || typeof scope !== 'string' || !scope.trim()) {
   throw new Error(
-    'review-loop workflow requires args: {scope: "<what to review>", cwd: "<workspace>"}',
+    'review workflow requires args: {scope: "<what to review>", cwd: "<workspace>"}',
   )
 }
 if (!cwd || typeof cwd !== 'string') {
-  throw new Error('review-loop workflow requires args.cwd (absolute workspace path)')
+  throw new Error('review workflow requires args.cwd (absolute workspace path)')
 }
 
 let maxIterations = Number(ARGS.maxIterations)

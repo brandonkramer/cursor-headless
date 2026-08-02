@@ -18,8 +18,8 @@ Current plugin version: see `.codex-plugin/plugin.json` /
 - `src/sdk_bridge_patch.py` — Windows Bridge discovery patch (WinError 10038)
 - `skills/cursor-headless/scripts/cursor_headless.py` — CLI wrapper (what MCP shells)
 - `skills/cursor-headless/SKILL.md` — routing + parent process (source of truth for behavior)
-- `commands/` — `/cursor-implement`, `/cursor-review-loop`, `/cursor-loop`
-- `workflows/` — Claude Code dynamic workflows (`implement.js`, `review-loop.js`)
+- `commands/` — `/cursor-implement`, `/cursor-review`, `/cursor-loop`
+- `workflows/` — Claude Code dynamic workflows (`implement.js`, `review.js`)
 - `.codex-plugin/`, `.claude-plugin/`, `.mcp.json` — host manifests / MCP entry
 - `bin/cursor-headless-mcp[.cmd]` — optional launchers
 

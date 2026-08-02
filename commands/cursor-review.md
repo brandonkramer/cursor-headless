@@ -6,10 +6,10 @@ description: >-
 argument-hint: [SCOPE]
 ---
 
-# /cursor-review-loop
+# /cursor-review
 
 You are the **orchestrator + reviewer** (this chat — Claude Code or Codex). Text
-after `/cursor-review-loop` is optional scope.
+after `/cursor-review` is optional scope.
 
 **Roles (hard split):**
 - **Review** → **you** / Claude review agents (never Cursor)
@@ -37,7 +37,7 @@ short chat summary.
 
 ```
 Workflow({
-  scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/review-loop.js",
+  scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/review.js",
   args: {
     scope: "<review target>",
     cwd: "<absolute workspace path>",
@@ -56,7 +56,7 @@ Remaining actionable: …
 Nits: …
 ```
 
-Then stop (skip Method B). Also available as `/cursor-headless:review-loop`.
+Then stop (skip Method B). Also available as `/cursor-headless:review`.
 
 ## Method B — Direct loop (Codex, or Claude without Workflow)
 

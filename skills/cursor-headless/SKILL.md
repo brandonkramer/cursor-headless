@@ -334,19 +334,19 @@ Prefer MCP tools when available; otherwise use the CLI wrapper / `cursor-agent -
 with the same model routing.
 
 **Workflows** (Dynamic workflows enabled): `/cursor-headless:implement` and
-`/cursor-headless:review-loop`, or slash commands that invoke them via the
+`/cursor-headless:review`, or slash commands that invoke them via the
 Workflow tool. Scripts coordinate thin Claude agents that must call `cursor_*`
 MCP — the workflow runtime cannot call MCP/shell itself.
 
 **`/loop` scheduling** (session-scoped): use `/cursor-loop [interval] [implement|review|babysit] …`
 to arm Claude’s `/loop` / cron tools so each tick re-runs `/cursor-implement` or
-`/cursor-review-loop` (or babysits CI/PR via `cursor_implement`). Loops stop when
+`/cursor-review` (or babysits CI/PR via `cursor_implement`). Loops stop when
 the session ends; Esc cancels while waiting. Not a durable cloud cron.
 
 ```text
 /cursor-loop 10m review uncommitted changes
 /cursor-loop 15m implement remaining parser slices
-/loop 20m /cursor-review-loop auth PR   # also fine: /loop can re-invoke skills
+/loop 20m /cursor-review auth PR   # also fine: /loop can re-invoke skills
 ```
 
 Label thin wrapper agents `composer:…` or `grok:…`. Escalate heavier reasoning
