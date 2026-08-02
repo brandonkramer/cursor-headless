@@ -1,7 +1,9 @@
 # cursor-headless
 
-Thin MCP tools + skill for **Codex** and **Claude Code**. Same tools for both
-backends: **`cli`** (`cursor-agent --print`) or **`sdk`** (Python `cursor-sdk`).
+Thin MCP tools + skill for **Codex** and **Claude Code**, backed by the
+**[Cursor SDK](https://cursor.com/docs/sdk/python)** (preferred when configured)
+or `cursor-agent --print` (CLI fallback). Same `cursor_ask` / `cursor_plan` /
+`cursor_implement` tools either way — often faster on the SDK path for short asks.
 
 ## Tools
 
@@ -18,24 +20,31 @@ Parent owns **`timeout`** (default **1200s**, env `CURSOR_HEADLESS_TIMEOUT`). Ra
 
 **Progress:** MCP runs use `stream-json` + `notifications/progress` (when the host forwards them). Every run returns a structured envelope with `job_id` + `progress_summary`. Poll `cursor_status(job_id)` when the host allows parallel tools.
 
-## Backend (CLI vs SDK)
+## Cursor SDK (and CLI fallback)
+
+**SDK first:** set a Cursor user/service API key in the host environment and the
+plugin auto-selects the Python SDK backend (MCP already launches with
+`--with cursor-sdk`). No key → CLI (`cursor-agent`) automatically.
 
 Same MCP surface either way (`fast`, `model`, `worktree`, `continue_session`, …).
 
 | Order | Rule |
 |-------|------|
-| 1 | Per-call `backend="cli"\|"sdk"` |
+| 1 | Per-call `backend="sdk"\|"cli"` |
 | 2 | Env `CURSOR_HEADLESS_BACKEND` |
-| 3 | **Auto:** `sdk` if `CURSOR_API_KEY` is set, else `cli` |
+| 3 | **Auto:** SDK when an API key is present, else CLI |
 
 | Backend | Needs | Notes |
 |---------|-------|-------|
-| `cli` | `cursor-agent` on PATH (login) | Default without API key |
-| `sdk` | `CURSOR_API_KEY` (`crsr_…` from [Dashboard → API Keys](https://cursor.com/dashboard/api)) | MCP `uv` launches with `--with cursor-sdk` |
+| **`sdk`** (preferred) | API key from [Dashboard → API Keys](https://cursor.com/dashboard/api) (`crsr_…` via env `CURSOR_API_KEY`) | Local agent via `cursor-sdk`; Fast via `ModelSelection` |
+| `cli` | `cursor-agent` on PATH (login) | Fallback; stream-json progress |
 
-**Fast:** MCP `fast=true` (or a `*-fast` model id) works on both backends. CLI adds `--fast`; SDK maps to `ModelSelection` params (`fast=true|false`). Grok CLI ids (`cursor-grok-4.5-{low,medium,high}`) become SDK `grok-4.5` + `effort=` + `fast=`.
+**Fast:** MCP `fast=true` (or a `*-fast` model id) works on both. SDK maps to
+`ModelSelection` params (`fast=true|false`); CLI adds `--fast`. Grok CLI ids
+(`cursor-grok-4.5-{low,medium,high}`) become SDK `grok-4.5` + `effort=` + `fast=`.
 
-**API key from a password manager:** MCP only reads `CURSOR_API_KEY` in the process env. Inject with e.g. Proton Pass:
+**API key from a password manager:** MCP only reads the key from process env.
+Inject with e.g. Proton Pass:
 
 ```bash
 # cursor.env — reference only (no secret in git)
@@ -45,7 +54,9 @@ pass-cli run --env-file cursor.env -- codex   # or claude
 
 Bare `pass://` inside plugin JSON is not resolved — wrap the host or set a real env value.
 
-**Windows:** live SDK works via an in-process Bridge discovery patch (upstream `select()` / WinError 10038). Prefer MCP `cursor_*` over raw `cursor-agent` in a CP-1252 console.
+**Windows:** live SDK works via an in-process Bridge discovery patch (upstream
+`select()` / WinError 10038). Prefer MCP `cursor_*` over raw `cursor-agent` in a
+CP-1252 console.
 
 ## Slash commands (Claude Code + Codex)
 
@@ -94,8 +105,8 @@ Stop with `Esc` while waiting, or ask to cancel the cron job. For durable unatte
 - `src/sdk_runner.py` / `sdk_bridge_patch.py` — SDK path + Windows Bridge fix
 - `bin/cursor-headless-mcp` — optional launcher
 
-Requires **`uv`**. For CLI backend also **`cursor-agent`** on PATH; for SDK set
-`CURSOR_API_KEY` (package pulled by MCP `--with cursor-sdk`).
+Requires **`uv`**. Prefer the **SDK** path (API key in env; `cursor-sdk` pulled by
+MCP). CLI fallback needs **`cursor-agent`** on PATH.
 
 MCP launch pins `mcp>=1.9,<2` and `--with cursor-sdk` (MCP Python SDK 2.x removed
 `mcp.server.fastmcp`). After updating, reinstall the Codex plugin

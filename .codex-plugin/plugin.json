@@ -39,7 +39,7 @@
       "Use cursor_implement with composer-2.5 (opt into Fast) or Grok 4.5 low/medium/high by complexity.",
       "You (parent) set timeout per call (default 1200s). Raise for broad maps; on timeout treat as no result and narrow or raise timeout.",
       "Read progress_summary + job_id from cursor_* envelopes; poll cursor_status(job_id) when parallel tools are available.",
-      "Backend auto-uses sdk when CURSOR_API_KEY is set (else cli). Override with backend= or CURSOR_HEADLESS_BACKEND.",
+      "Prefer Cursor SDK when an API key is configured (auto); else CLI. Same MCP tools; override with backend=.",
       "On Windows prefer MCP cursor_* tools (UTF-8) over shelling cursor-agent into a CP-1252 console.",
       "Use /cursor-implement to fan out parallel Cursor workers from Codex.",
       "Use /cursor-review-loop for parent review → Cursor fix → re-review until clean.",

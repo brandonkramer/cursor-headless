@@ -22,8 +22,9 @@ triggers:
 # Cursor Headless
 
 Orchestrator (Codex or Claude Code) delegates; Cursor executes bounded headless
-work via MCP. Backend is **`cli`** (`cursor-agent --print`) or **`sdk`**
-(`cursor-sdk`) — same tools and envelope either way.
+work via MCP. Prefer the **Cursor SDK** backend when an API key is configured;
+otherwise fall back to **`cli`** (`cursor-agent --print`). Same tools and
+envelope either way — SDK is often faster for short asks.
 
 **Prefer MCP tools** (`cursor_ask` / `cursor_plan` / `cursor_implement`):
 
@@ -33,34 +34,34 @@ work via MCP. Backend is **`cli`** (`cursor-agent --print`) or **`sdk`**
 | `cursor_plan` | Read-only explore/plan (`--mode plan`) | `cursor-grok-4.5-high` — **you pick tier + Fast** |
 | `cursor_implement` | Writes (`--mode default`, `--force`) | `composer-2.5` — **you pick by complexity / when to use Fast** |
 
-Fallback CLI wrapper: `scripts/cursor_headless.py` (also what the MCP `cli` path uses).
+CLI wrapper fallback: `scripts/cursor_headless.py` (MCP `cli` path).
 
-## Backend (CLI vs SDK)
+## Cursor SDK (preferred) vs CLI
 
 Same MCP args (`fast`, `model`, `worktree`, `continue_session`, `timeout`, …).
 
-1. Per-call `backend="cli"|"sdk"`
+1. Per-call `backend="sdk"|"cli"`
 2. Env `CURSOR_HEADLESS_BACKEND`
-3. **Auto:** `sdk` if `CURSOR_API_KEY` is set, else `cli`
+3. **Auto:** SDK when `CURSOR_API_KEY` is set, else CLI
 
 | Backend | Needs | Notes |
 |---------|-------|-------|
-| `cli` | `cursor-agent` login on PATH | stream-json progress |
-| `sdk` | `CURSOR_API_KEY` (`crsr_…`) | MCP `uv --with cursor-sdk`; lazy-imported |
+| **`sdk`** (preferred) | `CURSOR_API_KEY` (`crsr_…`) | MCP `uv --with cursor-sdk`; lazy-imported; Fast via `ModelSelection` |
+| `cli` | `cursor-agent` login on PATH | Fallback; stream-json progress |
 
 Windows: Bridge discovery is patched in-process so live SDK works (upstream
 `selectors.select` on pipes → WinError 10038).
 
-| CLI flag | SDK backend |
-|----------|-------------|
-| `fast=true` / `*-fast` model id | `ModelSelection` params `fast=true\|false` (SDK has no `composer-2.5-fast` id) |
-| `cursor-grok-4.5-{low,medium,high}` | SDK `grok-4.5` + `effort=` + `fast=` |
-| `--worktree [name]` | Git worktree at `<repo>/.cursor-headless/worktrees/<name>`; agent `cwd` set there. Left on disk after run. |
-| `--force` | `SendOptions(local=LocalSendOptions(force=True))`; write/default mode only |
-| `--continue-session` | SDK resumes stored `agent_id` (or `CURSOR_HEADLESS_SDK_AGENT_ID`); create fallback on failure |
-| `--worktree-base`, sandbox, trust, MCP approve | CLI-only until cursor-sdk exposes equivalents |
+| Capability | SDK | CLI |
+|------------|-----|-----|
+| `fast=true` / `*-fast` model id | `ModelSelection` `fast=true\|false` (no `composer-2.5-fast` id) | `--fast` / `*-fast` id |
+| `cursor-grok-4.5-{low,medium,high}` | `grok-4.5` + `effort=` + `fast=` | native CLI model ids |
+| `worktree` | Git worktree under `<repo>/.cursor-headless/worktrees/<name>`; left on disk | `--worktree` |
+| `force` | `LocalSendOptions(force=True)` (default mode) | `--force` |
+| `continue_session` | Resume stored `agent_id` (`CURSOR_HEADLESS_SDK_AGENT_ID` override) | `--continue-session` / `--resume` |
+| sandbox / trust / MCP approve / `--worktree-base` | — | CLI-only for now |
 
-### API key (SDK) + password managers
+### API key + password managers (SDK)
 
 MCP only reads process env `CURSOR_API_KEY` — it does not call Pass/1Password.
 Mint at [Dashboard → API Keys](https://cursor.com/dashboard/api). Inject at host start:
