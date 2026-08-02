@@ -7,10 +7,11 @@ import argparse
 import hashlib
 import json
 import os
-import selectors
+import queue
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -404,6 +405,11 @@ def git_evidence(cwd: str) -> tuple[str, bool]:
 
 
 def run_streaming(cmd: list[str], cwd: str, timeout: float) -> int:
+    """Stream stdout lines with a wall-clock timeout.
+
+    Uses a reader thread + queue (not selectors) so Windows works — select() on
+    pipes raises WinError 10093 / WSAStartup failures under some hosts.
+    """
     started_at = time.monotonic()
     proc = subprocess.Popen(
         cmd,
@@ -416,8 +422,16 @@ def run_streaming(cmd: list[str], cwd: str, timeout: float) -> int:
         **_SUBPROCESS_TEXT,
     )
     assert proc.stdout is not None
-    selector = selectors.DefaultSelector()
-    selector.register(proc.stdout, selectors.EVENT_READ)
+    line_q: queue.Queue[str | None] = queue.Queue()
+
+    def _reader() -> None:
+        try:
+            for line in proc.stdout:
+                line_q.put(line)
+        finally:
+            line_q.put(None)
+
+    threading.Thread(target=_reader, name="cursor-stream-reader", daemon=True).start()
 
     while True:
         elapsed = time.monotonic() - started_at
@@ -431,17 +445,18 @@ def run_streaming(cmd: list[str], cwd: str, timeout: float) -> int:
             )
             return 124
 
-        for key, _ in selector.select(timeout=min(0.25, remaining)):
-            line = key.fileobj.readline()
-            if line:
-                safe_print(line, end="", flush=True)
-            else:
-                selector.unregister(key.fileobj)
+        try:
+            line = line_q.get(timeout=min(0.25, remaining))
+        except queue.Empty:
+            if proc.poll() is not None and line_q.empty():
+                return proc.returncode if proc.returncode is not None else 0
+            continue
 
-        if proc.poll() is not None:
-            for line in proc.stdout:
-                safe_print(line, end="", flush=True)
-            return proc.returncode
+        if line is None:
+            proc.wait(timeout=max(0.1, remaining))
+            return proc.returncode if proc.returncode is not None else 0
+
+        safe_print(line, end="", flush=True)
 
 
 def main() -> int:
