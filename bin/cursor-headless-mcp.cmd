@@ -6,4 +6,4 @@ rem Force UTF-8 so Cursor output with em-dashes / fancy quotes does not die on C
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
 cd /d "%ROOT%"
-uv run --with mcp>=1.9,<2 --python 3.14 python "%ROOT%\src\cursor_headless_mcp.py"
+uv run --with mcp>=1.9,<2 --with cursor-sdk --python 3.14 python "%ROOT%\src\cursor_headless_mcp.py"

@@ -14,7 +14,7 @@ Current plugin version: see `.codex-plugin/plugin.json` /
 - `src/jobs.py` — job store under `~/.cache/cursor-headless/jobs/`
 - `src/runner.py` — backend switch (`cli` default, opt-in `sdk`)
 - `src/cli_runner.py` — stream-json CLI wrapper runner
-- `src/sdk_runner.py` — cursor-sdk local runner (requires `CURSOR_API_KEY` + `cursor-sdk`)
+- `src/sdk_runner.py` — cursor-sdk local runner (MCP uv includes `cursor-sdk`; still needs `CURSOR_API_KEY`)
 - `skills/cursor-headless/scripts/cursor_headless.py` — CLI wrapper (what MCP shells)
 - `skills/cursor-headless/SKILL.md` — routing + parent process (source of truth for behavior)
 - `commands/` — `/cursor-implement`, `/cursor-review-loop`, `/cursor-loop`
@@ -52,10 +52,19 @@ package with the same MCP tool surface and envelope.
 | Backend | Requires | Notes |
 |---------|----------|-------|
 | `cli` | `cursor-agent` on PATH | Default; stream-json progress |
-| `sdk` | `pip install cursor-sdk`, `CURSOR_API_KEY` | Per-call override: MCP `backend="sdk"` |
+| `sdk` | `CURSOR_API_KEY` | MCP uv launch includes `cursor-sdk`; per-call override: MCP `backend="sdk"` |
 
 Set env `CURSOR_HEADLESS_BACKEND=sdk` to make SDK the default for all MCP calls.
 CLI-only installs stay working — SDK is lazy-imported.
+
+SDK parity vs CLI flags:
+
+- **`worktree`**: no native SDK field — runner creates/reuses git worktree at
+  `<repo>/.cursor-headless/worktrees/<name>` and sets `LocalAgentOptions(cwd=…)`.
+  Worktrees are left on disk (no auto cleanup). Requires a git repo.
+- **`force`**: `SendOptions(local=LocalSendOptions(force=True))` for `mode=default` only.
+  Older SDKs without `LocalSendOptions` get a prompt fallback instead.
+- **CLI-only for now**: `--worktree-base`, `--sandbox`, `--trust`, `--approve-mcps`, `--auto-review`.
 
 ## Commands (contributors)
 
@@ -69,7 +78,7 @@ python3 skills/cursor-headless/scripts/cursor_headless.py --help
 
 # Syntax check
 python3 -m py_compile skills/cursor-headless/scripts/cursor_headless.py
-uv run --with 'mcp>=1.9,<2' --python 3.14 python -c "import sys; sys.path.insert(0,'src'); import cursor_headless_mcp"
+uv run --with 'mcp>=1.9,<2' --with cursor-sdk --python 3.14 python -c "import sys; sys.path.insert(0,'src'); import cursor_headless_mcp"
 ```
 
 Prove timeout/encoding changes with a fake `cursor-agent` on PATH (sleep / UTF-8

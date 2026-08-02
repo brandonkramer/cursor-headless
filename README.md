@@ -15,7 +15,7 @@ Pass `model` explicitly: simple → `composer-2.5` (or `*-fast` / `fast=true` wh
 
 Parent owns **`timeout`** (default **1200s**, env `CURSOR_HEADLESS_TIMEOUT`). Raise for broad maps; on timeout treat as no result — narrow or raise `timeout` and retry.
 
-**Progress:** MCP runs use `stream-json` + `notifications/progress` (when the host forwards them). Every run returns a structured envelope with `job_id` + `progress_summary`. Poll `cursor_status(job_id)` when the host allows parallel tools. Backend: default `cli`; opt-in `CURSOR_HEADLESS_BACKEND=sdk` or `backend="sdk"` (needs `cursor-sdk` + `CURSOR_API_KEY`).
+**Progress:** MCP runs use `stream-json` + `notifications/progress` (when the host forwards them). Every run returns a structured envelope with `job_id` + `progress_summary`. Poll `cursor_status(job_id)` when the host allows parallel tools. Backend: default `cli`; opt-in `CURSOR_HEADLESS_BACKEND=sdk` or `backend="sdk"` (MCP `uv` launch includes `cursor-sdk`; still needs `CURSOR_API_KEY`).
 
 ## Slash commands (Claude Code + Codex)
 
@@ -68,7 +68,7 @@ Requires `uv` and `cursor-agent` on PATH.
 (UTF-8 stdio + wrapper). Direct `cursor-agent` in a legacy console can fail on
 non-ASCII output; the UTF-8 wrapper/MCP path is the supported fallback.
 
-Note: pin `mcp>=1.9,<2` — MCP Python SDK 2.x removed `mcp.server.fastmcp`.
+Note: MCP launch pins `mcp>=1.9,<2` and `--with cursor-sdk` — MCP Python SDK 2.x removed `mcp.server.fastmcp`; SDK backend is available in the MCP env without a separate global install.
 After updating, reinstall the Codex plugin (`codex plugin remove` / `add`) so the
 versioned cache under `~/.codex/plugins/cache/` picks up the pin.
 

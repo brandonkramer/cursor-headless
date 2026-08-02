@@ -5,4 +5,4 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export CURSOR_HEADLESS_ROOT="$ROOT"
-exec uv run --with 'mcp>=1.9,<2' --python 3.14 python "$ROOT/src/cursor_headless_mcp.py"
+exec uv run --with 'mcp>=1.9,<2' --with cursor-sdk --python 3.14 python "$ROOT/src/cursor_headless_mcp.py"

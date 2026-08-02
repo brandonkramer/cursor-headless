@@ -5,6 +5,8 @@
       "run",
       "--with",
       "mcp>=1.9,<2",
+      "--with",
+      "cursor-sdk",
       "--python",
       "3.14",
       "python",

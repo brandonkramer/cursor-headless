@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import threading
 import time
@@ -12,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from cli_runner import CliRunResult, ProgressCallback, StatusCallback
+from sdk_sessions import load_stored_agent_id, save_stored_agent_id
 
 _ASK_PREFIX = (
     "Read-only ask mode: answer the question without editing files, "
@@ -234,17 +236,192 @@ def _git_evidence(cwd: str) -> tuple[str, bool]:
     return block, has_diff
 
 
-def _mode_mapping(mode: str, prompt: str, *, worktree: str | None) -> tuple[str, str | None]:
+_WORKTREE_ROOT_DIR = ".cursor-headless/worktrees"
+_FORCE_PROMPT_SUFFIX = (
+    "\n\nAuto-approve shell commands and file edits unless explicitly denied "
+    "(equivalent to cursor-agent --force)."
+)
+
+
+def _sanitize_worktree_name(name: str) -> str:
+    cleaned = re.sub(r"[^\w.-]+", "-", name.strip()).strip("-")
+    return cleaned or "worktree"
+
+
+def _git_toplevel(cwd: str) -> str | None:
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=cwd,
+            capture_output=True,
+            check=False,
+            timeout=30,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    top = (proc.stdout or "").strip()
+    return top or None
+
+
+def _is_git_worktree(path: Path) -> bool:
+    if not path.is_dir():
+        return False
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=str(path),
+            capture_output=True,
+            check=False,
+            timeout=30,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0 and (proc.stdout or "").strip() == "true"
+
+
+def _prepare_worktree_cwd(
+    repo_cwd: str,
+    worktree: str | None,
+    *,
+    job_id: str,
+) -> tuple[str, str | None]:
+    """Create or reuse a git worktree; return (effective_cwd, error_message).
+
+    Worktrees live under ``<git-root>/.cursor-headless/worktrees/<name>`` and are
+    left on disk after the run (no automatic cleanup).
+    """
+    if worktree is None:
+        return repo_cwd, None
+
+    git_root = _git_toplevel(repo_cwd)
+    if git_root is None:
+        return repo_cwd, (
+            "error: --worktree requires a git repository (git rev-parse --show-toplevel failed)"
+        )
+
+    label = worktree if worktree else f"cursor-headless-{job_id}"
+    name = _sanitize_worktree_name(label)
+    worktree_path = Path(git_root) / _WORKTREE_ROOT_DIR / name
+    if _is_git_worktree(worktree_path):
+        return str(worktree_path.resolve()), None
+
+    worktree_path.parent.mkdir(parents=True, exist_ok=True)
+    branch = f"cursor-headless/{name}"
+    cmd = ["git", "worktree", "add", "-B", branch, str(worktree_path), "HEAD"]
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=git_root,
+            capture_output=True,
+            check=False,
+            timeout=120,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return repo_cwd, f"error: git worktree add failed: {exc}"
+
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip()
+        return repo_cwd, f"error: git worktree add failed ({' '.join(cmd)}): {detail}"
+
+    return str(worktree_path.resolve()), None
+
+
+def _mode_mapping(mode: str, prompt: str, *, force: bool, force_via_sdk: bool) -> tuple[str, str]:
     """Map CLI modes to SDK SendOptions.mode + prompt adjustments."""
     extra = prompt
-    if worktree is not None:
-        label = worktree or "(isolated worktree)"
-        extra = f"Use an isolated git worktree named {label!r} for edits.\n\n{extra}"
+    if force and mode == "default" and not force_via_sdk:
+        extra = f"{extra.rstrip()}{_FORCE_PROMPT_SUFFIX}"
     if mode == "ask":
         return "plan", f"{_ASK_PREFIX}{extra}"
     if mode == "plan":
         return "plan", extra
     return "agent", extra
+
+
+def _build_send_options(
+    sdk: object,
+    *,
+    sdk_mode: str,
+    force: bool,
+    mode: str,
+) -> dict[str, object]:
+    send_kwargs: dict[str, object] = {"mode": sdk_mode}
+    if not force or mode != "default":
+        return send_kwargs
+
+    LocalSendOptions = getattr(sdk, "LocalSendOptions", None)
+    if LocalSendOptions is not None:
+        send_kwargs["local"] = LocalSendOptions(force=True)
+    else:
+        send_kwargs["local"] = {"force": True}
+    return send_kwargs
+
+
+def _resume_options(api_key: str, AgentOptions: object | None) -> object:
+    if AgentOptions is not None:
+        return AgentOptions(api_key=api_key)
+    return {"api_key": api_key}
+
+
+def _open_agent(
+    *,
+    Agent: object,
+    LocalAgentOptions: object,
+    AgentOptions: object | None,
+    continue_session: bool,
+    workspace: str,
+    mode: str,
+    resolved_model: str,
+    api_key: str,
+    agent_cwd: str,
+    on_progress: ProgressCallback | None,
+) -> tuple[object, str]:
+    """Return (agent context manager, resume fallback note for stderr/progress)."""
+    resume_note = ""
+    if continue_session:
+        agent_id = os.environ.get("CURSOR_HEADLESS_SDK_AGENT_ID", "").strip()
+        if not agent_id:
+            agent_id = load_stored_agent_id(workspace=workspace, mode=mode) or ""
+        if agent_id:
+            resume = getattr(Agent, "resume", None)
+            if callable(resume):
+                try:
+                    return resume(agent_id, _resume_options(api_key, AgentOptions)), ""
+                except Exception as exc:
+                    resume_note = (
+                        f"sdk: Agent.resume({agent_id!r}) failed ({exc}); "
+                        "falling back to Agent.create"
+                    )
+            else:
+                resume_note = "sdk: Agent.resume unavailable; falling back to Agent.create"
+            if resume_note and on_progress:
+                on_progress(0.02, resume_note)
+
+    return Agent.create(
+        model=resolved_model,
+        api_key=api_key,
+        local=LocalAgentOptions(cwd=agent_cwd),
+    ), resume_note
+
+
+def _persist_agent_id(*, agent: object, workspace: str, mode: str) -> None:
+    raw_id = getattr(agent, "agent_id", None)
+    if isinstance(raw_id, str) and raw_id.strip():
+        save_stored_agent_id(workspace=workspace, mode=mode, agent_id=raw_id)
 
 
 def cancel_sdk_run(job_id: str) -> bool:
@@ -291,10 +468,6 @@ def run_sdk(
             message="error: force is only allowed with mode default",
         )
 
-    if continue_session:
-        # SDK resume is agent-scoped; headless MCP creates ephemeral agents per call.
-        pass
-
     if skip_preflight:
         pass  # SDK auth is validated at Agent.create / send time.
 
@@ -323,6 +496,7 @@ def run_sdk(
 
     Agent = getattr(sdk, "Agent", None)
     LocalAgentOptions = getattr(sdk, "LocalAgentOptions", None)
+    AgentOptions = getattr(sdk, "AgentOptions", None)
     SendOptions = getattr(sdk, "SendOptions", None)
     if Agent is None or LocalAgentOptions is None:
         return _empty_result(
@@ -331,8 +505,27 @@ def run_sdk(
             message="error: cursor-sdk is installed but missing Agent/LocalAgentOptions exports",
         )
 
-    sdk_mode, effective_prompt = _mode_mapping(mode, prompt, worktree=worktree)
     workspace = str(Path(cwd).resolve())
+    worktree_cwd, worktree_err = _prepare_worktree_cwd(
+        workspace,
+        worktree,
+        job_id=resolved_job_id,
+    )
+    if worktree_err:
+        return _empty_result(
+            job_id=resolved_job_id,
+            model=resolved_model,
+            message=worktree_err,
+        )
+
+    LocalSendOptions = getattr(sdk, "LocalSendOptions", None)
+    force_via_sdk = force and mode == "default" and LocalSendOptions is not None
+    sdk_mode, effective_prompt = _mode_mapping(
+        mode,
+        prompt,
+        force=force,
+        force_via_sdk=force_via_sdk,
+    )
     state = _StreamState(model=resolved_model)
     started = time.monotonic()
     timed_out = False
@@ -341,12 +534,29 @@ def run_sdk(
     run_status = "error"
 
     try:
-        with Agent.create(
-            model=resolved_model,
+        agent_cm, resume_note = _open_agent(
+            Agent=Agent,
+            LocalAgentOptions=LocalAgentOptions,
+            AgentOptions=AgentOptions,
+            continue_session=continue_session,
+            workspace=workspace,
+            mode=mode,
+            resolved_model=resolved_model,
             api_key=api_key,
-            local=LocalAgentOptions(cwd=workspace),
-        ) as agent:
-            send_kwargs: dict[str, object] = {"mode": sdk_mode}
+            agent_cwd=worktree_cwd,
+            on_progress=on_progress,
+        )
+        if resume_note:
+            stderr = resume_note
+            state.summary_lines.append(resume_note)
+
+        with agent_cm as agent:
+            send_kwargs = _build_send_options(
+                sdk,
+                sdk_mode=sdk_mode,
+                force=force,
+                mode=mode,
+            )
             if SendOptions is not None:
                 run = agent.send(effective_prompt, SendOptions(**send_kwargs))
             else:
@@ -392,6 +602,8 @@ def run_sdk(
                 with _active_lock:
                     _active_runs.pop(resolved_job_id, None)
 
+            _persist_agent_id(agent=agent, workspace=workspace, mode=mode)
+
     except Exception as exc:
         return _empty_result(
             job_id=resolved_job_id,
@@ -403,7 +615,7 @@ def run_sdk(
     result_text = state.result_text
 
     if mode == "default" and require_diff:
-        evidence, has_diff = _git_evidence(workspace)
+        evidence, has_diff = _git_evidence(worktree_cwd)
         result_text = f"{result_text.rstrip()}\n{evidence}".strip() if result_text else evidence.strip()
         if not has_diff and run_status == "finished" and not timed_out:
             run_status = "error"
