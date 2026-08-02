@@ -74,41 +74,45 @@ def _ask(
     token: str,
     backend: str | None,
     prefer_fast: bool = True,
+    attempts: int = 2,
 ) -> dict[str, object]:
     from runner import run_cursor
 
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
-        Path(td, "README.md").write_text("prove\n", encoding="utf-8")
-        t0 = time.perf_counter()
-        result = run_cursor(
-            prompt=prompt,
-            cwd=td,
-            mode="ask",
-            model="composer-2.5",
-            prefer_fast=prefer_fast,
-            force=False,
-            worktree=None,
-            skip_preflight=True,
-            continue_session=False,
-            timeout=180,
-            require_diff=False,
-            backend=backend,
-        )
-        dt = time.perf_counter() - t0
-        text = (result.get("result") or "").replace("\n", " ")
-        if "crsr_" in text:
-            text = "[REDACTED]"
-        print(
-            f"backend_arg={backend!r} got={result.get('backend')!r} "
-            f"status={result.get('status')} wall={dt:.2f}s model={result.get('model')!r}",
-            flush=True,
-        )
-        print(f"  result={text[:140]!r}", flush=True)
-        if result.get("status") != "ok":
-            raise SystemExit(f"ask failed: {text[:300]}")
-        if token not in text:
-            raise SystemExit(f"missing token {token}: {text[:300]}")
-        return result
+    last_text = ""
+    for attempt in range(1, attempts + 1):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            Path(td, "README.md").write_text("prove\n", encoding="utf-8")
+            t0 = time.perf_counter()
+            result = run_cursor(
+                prompt=prompt,
+                cwd=td,
+                mode="ask",
+                model="composer-2.5",
+                prefer_fast=prefer_fast,
+                force=False,
+                worktree=None,
+                skip_preflight=True,
+                continue_session=False,
+                timeout=180,
+                require_diff=False,
+                backend=backend,
+            )
+            dt = time.perf_counter() - t0
+            text = (result.get("result") or "").replace("\n", " ")
+            if "crsr_" in text:
+                text = "[REDACTED]"
+            last_text = text
+            print(
+                f"backend_arg={backend!r} attempt={attempt}/{attempts} "
+                f"got={result.get('backend')!r} status={result.get('status')} "
+                f"wall={dt:.2f}s model={result.get('model')!r}",
+                flush=True,
+            )
+            print(f"  result={text[:140]!r}", flush=True)
+            if result.get("status") == "ok" and token in text:
+                return result
+            print(f"  retryable miss (status/token); {'retrying' if attempt < attempts else 'giving up'}", flush=True)
+    raise SystemExit(f"ask failed after {attempts} attempts: {last_text[:300]}")
 
 
 def prove_live_cli() -> None:
