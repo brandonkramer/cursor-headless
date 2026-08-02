@@ -34,6 +34,25 @@ headless work via `cursor-agent --print`.
 
 Fallback CLI wrapper: `scripts/cursor_headless.py` (also what the MCP server calls).
 
+## Backend (CLI vs SDK)
+
+Default backend is **`cli`** (`cursor-agent --print` via the wrapper, MCP forces
+`--output-format stream-json` for live progress). Opt into the Python SDK with env
+`CURSOR_HEADLESS_BACKEND=sdk` or per-call MCP `backend="sdk"`.
+SDK needs `pip install cursor-sdk` and `CURSOR_API_KEY`; same tools/envelope, lazy-loaded
+so CLI-only installs still work.
+
+## Following progress (parent)
+
+1. Each `cursor_ask` / `cursor_plan` / `cursor_implement` returns an envelope with
+   `job_id`, `progress_summary`, and `result`.
+2. While a long call runs, hosts may surface MCP `notifications/progress` in the UI —
+   that may **not** enter the model context until the tool returns.
+3. If the host allows parallel tools: poll `cursor_status(job_id)` (reads
+   `~/.cache/cursor-headless/jobs/<id>.json`).
+4. Timeout / empty / error still means **no result** for findings — use
+   `progress_summary` only as telemetry.
+
 Never pass a Fable model to Cursor (`claude-fable-5-*`). Final high-taste review
 stays on the parent (Claude in Claude Code, or Codex / gpt-5.6-sol there); use
 Cursor models below for delegated work.

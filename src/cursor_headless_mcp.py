@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
-"""Thin MCP facade over cursor_headless.py — native tools, same fast path."""
+"""Thin MCP facade over cursor_headless.py — native tools, stream-json + progress."""
 
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
-import tempfile
-from pathlib import Path
+import time
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 
-PLUGIN_ROOT = Path(__file__).resolve().parents[1]
-WRAPPER = PLUGIN_ROOT / "skills" / "cursor-headless" / "scripts" / "cursor_headless.py"
+from envelope import format_envelope
+from jobs import JobState, create_job, register_status_tool, update_job_from_status
+from runner import run_cursor
 
 # Keep in sync with cursor_headless.py DEFAULT_TIMEOUT_SEC.
 DEFAULT_TIMEOUT_SEC = float(os.environ.get("CURSOR_HEADLESS_TIMEOUT", "1200"))
 
 mcp = FastMCP("cursor-headless")
+register_status_tool(mcp)
 
-_SUBPROCESS_TEXT = {"text": True, "encoding": "utf-8", "errors": "replace"}
+_INFO_INTERVAL_SEC = 5.0
 
 
 def _configure_utf8_stdio() -> None:
@@ -38,17 +38,10 @@ def _configure_utf8_stdio() -> None:
                 pass
 
 
-def _child_env() -> dict[str, str]:
-    env = os.environ.copy()
-    env.setdefault("PYTHONUTF8", "1")
-    env.setdefault("PYTHONIOENCODING", "utf-8")
-    return env
-
-
 _configure_utf8_stdio()
 
 
-def _run_wrapper(
+def _dispatch(
     *,
     prompt: str,
     cwd: str,
@@ -58,87 +51,91 @@ def _run_wrapper(
     force: bool,
     worktree: str | None,
     skip_preflight: bool,
-    output_format: str,
     continue_session: bool,
     timeout: float,
     require_diff: bool,
+    backend: str | None,
+    ctx: Context | None,
+    progress: bool,
 ) -> str:
-    if not WRAPPER.is_file():
-        return f"error: wrapper missing at {WRAPPER}"
+    job_id = create_job()
+    started = time.monotonic()
+    last_info_at = 0.0
+    update_job_from_status(
+        job_id,
+        {"phase": mode, "model": model, "message": "starting"},
+        state="running",
+    )
 
-    # Never put multiline prompts on argv (Windows .cmd + Python argv mangling).
-    prompt_path: str | None = None
-    try:
-        fd, prompt_path = tempfile.mkstemp(prefix="cursor-mcp-prompt-", suffix=".md")
-        os.close(fd)
-        Path(prompt_path).write_text(
-            prompt.replace("\r\n", "\n").replace("\r", "\n"),
-            encoding="utf-8",
-            newline="\n",
+    def on_progress(value: float, message: str) -> None:
+        nonlocal last_info_at
+        update_job_from_status(
+            job_id,
+            {
+                "phase": mode,
+                "model": model,
+                "message": message,
+                "progress": value,
+                "elapsed_sec": round(time.monotonic() - started, 1),
+            },
+            state="running",
+        )
+        if not ctx or not progress:
+            return
+        ctx.report_progress(value, total=None, message=message)
+        now = time.monotonic()
+        if now - last_info_at >= _INFO_INTERVAL_SEC:
+            ctx.info(message)
+            last_info_at = now
+
+    def on_status(event: dict[str, object]) -> None:
+        etype = event.get("type")
+        subtype = event.get("subtype")
+        update_job_from_status(
+            job_id,
+            {
+                "phase": mode,
+                "model": model,
+                "event": etype,
+                "subtype": subtype,
+                "elapsed_sec": round(time.monotonic() - started, 1),
+            },
+            state="running",
         )
 
-        cmd = [
-            sys.executable,
-            str(WRAPPER),
-            "--cwd",
-            cwd,
-            "--mode",
-            mode,
-            "--model",
-            model,
-            "--output-format",
-            output_format,
-            "--timeout",
-            str(timeout),
-            "--prompt-file",
-            prompt_path,
-        ]
-        if prefer_fast:
-            cmd.append("--fast")
-        if force:
-            cmd.append("--force")
-        if skip_preflight:
-            cmd.append("--skip-preflight")
-        if continue_session:
-            cmd.append("--continue-session")
-        if require_diff:
-            cmd.append("--require-diff")
-        if worktree is not None:
-            cmd.append("--worktree")
-            if worktree:
-                cmd.append(worktree)
-
-        try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                check=False,
-                timeout=timeout + 30,
-                stdin=subprocess.DEVNULL,
-                env=_child_env(),
-                **_SUBPROCESS_TEXT,
-            )
-        except subprocess.TimeoutExpired as exc:
-            out = (exc.stdout or "") + (exc.stderr or "")
-            return (
-                f"error: timed out after {timeout:g}s — treat as no result; "
-                f"retry with a narrower prompt or pass timeout=<higher seconds>\n{out}"
-            ).strip()
-
-        parts = []
-        if proc.stdout:
-            parts.append(proc.stdout.rstrip())
-        if proc.stderr:
-            parts.append(f"[stderr]\n{proc.stderr.rstrip()}")
-        if proc.returncode != 0:
-            parts.append(f"[exit {proc.returncode}]")
-        return "\n".join(parts) if parts else f"[exit {proc.returncode}] (empty output)"
-    finally:
-        if prompt_path:
-            try:
-                os.unlink(prompt_path)
-            except OSError:
-                pass
+    result = run_cursor(
+        backend=backend,
+        prompt=prompt,
+        cwd=cwd,
+        mode=mode,
+        model=model,
+        prefer_fast=prefer_fast,
+        force=force,
+        worktree=worktree,
+        skip_preflight=skip_preflight,
+        continue_session=continue_session,
+        timeout=timeout,
+        require_diff=require_diff,
+        job_id=job_id,
+        on_progress=on_progress if progress else None,
+        on_status=on_status if progress else None,
+    )
+    terminal: str = result["status"]
+    job_state: JobState = (
+        "timeout" if terminal == "timeout" else "done" if terminal == "ok" else "error"
+    )
+    update_job_from_status(
+        job_id,
+        {
+            "phase": mode,
+            "model": result.get("model") or model,
+            "message": f"finished status={terminal}",
+            "tools": result.get("tools"),
+            "elapsed_sec": result.get("elapsed_s"),
+        },
+        state=job_state,
+    )
+    return format_envelope(result)
 
 
 @mcp.tool()
@@ -150,6 +147,9 @@ def cursor_ask(
     skip_preflight: bool = True,
     continue_session: bool = False,
     timeout: float = DEFAULT_TIMEOUT_SEC,
+    backend: str | None = None,
+    progress: bool = True,
+    ctx: Context | None = None,
 ) -> str:
     """Read-only Cursor ask (--mode ask).
 
@@ -160,7 +160,7 @@ def cursor_ask(
     Raise for broad multi-app maps; lower for tiny one-shot Q&A. On timeout: no result —
     narrow the prompt or raise timeout and retry.
     """
-    return _run_wrapper(
+    return _dispatch(
         prompt=prompt,
         cwd=cwd,
         mode="ask",
@@ -169,10 +169,12 @@ def cursor_ask(
         force=False,
         worktree=None,
         skip_preflight=skip_preflight,
-        output_format="text",
         continue_session=continue_session,
         timeout=timeout,
         require_diff=False,
+        backend=backend,
+        ctx=ctx,
+        progress=progress,
     )
 
 
@@ -185,6 +187,9 @@ def cursor_plan(
     skip_preflight: bool = True,
     continue_session: bool = False,
     timeout: float = DEFAULT_TIMEOUT_SEC,
+    backend: str | None = None,
+    progress: bool = True,
+    ctx: Context | None = None,
 ) -> str:
     """Read-only Cursor plan/explore (--mode plan).
 
@@ -195,7 +200,7 @@ def cursor_plan(
     Broad duplicate/consumer inventory often needs 1200–1800 or a narrower path slice.
     On timeout: treat as no result — do not invent findings; narrow or raise timeout.
     """
-    return _run_wrapper(
+    return _dispatch(
         prompt=prompt,
         cwd=cwd,
         mode="plan",
@@ -204,10 +209,12 @@ def cursor_plan(
         force=False,
         worktree=None,
         skip_preflight=skip_preflight,
-        output_format="text",
         continue_session=continue_session,
         timeout=timeout,
         require_diff=False,
+        backend=backend,
+        ctx=ctx,
+        progress=progress,
     )
 
 
@@ -223,6 +230,9 @@ def cursor_implement(
     continue_session: bool = False,
     timeout: float = DEFAULT_TIMEOUT_SEC,
     require_diff: bool = False,
+    backend: str | None = None,
+    progress: bool = True,
+    ctx: Context | None = None,
 ) -> str:
     """Write-capable Cursor implementation (--mode default).
 
@@ -238,7 +248,7 @@ def cursor_implement(
     Parent/orchestrator owns timeout (default 1200s, or CURSOR_HEADLESS_TIMEOUT).
     Raise for large write slices; prefer smaller slices when possible. On timeout: no result.
     """
-    return _run_wrapper(
+    return _dispatch(
         prompt=prompt,
         cwd=cwd,
         mode="default",
@@ -247,10 +257,12 @@ def cursor_implement(
         force=force,
         worktree=worktree,
         skip_preflight=skip_preflight,
-        output_format="text",
         continue_session=continue_session,
         timeout=timeout,
         require_diff=require_diff,
+        backend=backend,
+        ctx=ctx,
+        progress=progress,
     )
 
 

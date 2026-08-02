@@ -9,10 +9,13 @@ Thin MCP tools + skill over `cursor-agent --print` for **Codex** and **Claude Co
 | `cursor_ask` | ask (read-only) | `cursor-grok-4.5-high` (pick low\|medium\|high + Fast) |
 | `cursor_plan` | plan (read-only) | `cursor-grok-4.5-high` (pick low\|medium\|high + Fast) |
 | `cursor_implement` | default + force | `composer-2.5` (opt into Fast; escalate to Grok 4.5 low/medium/high by complexity) |
+| `cursor_status` | read job store | — (poll progress by `job_id`) |
 
 Pass `model` explicitly: simple → `composer-2.5` (or `*-fast` / `fast=true` when latency matters); light → `cursor-grok-4.5-low`; medium → `…-medium`; hard → `…-high`.
 
 Parent owns **`timeout`** (default **1200s**, env `CURSOR_HEADLESS_TIMEOUT`). Raise for broad maps; on timeout treat as no result — narrow or raise `timeout` and retry.
+
+**Progress:** MCP runs use `stream-json` + `notifications/progress` (when the host forwards them). Every run returns a structured envelope with `job_id` + `progress_summary`. Poll `cursor_status(job_id)` when the host allows parallel tools. Backend: default `cli`; opt-in `CURSOR_HEADLESS_BACKEND=sdk` or `backend="sdk"` (needs `cursor-sdk` + `CURSOR_API_KEY`).
 
 ## Slash commands (Claude Code + Codex)
 

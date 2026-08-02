@@ -9,7 +9,12 @@ Current plugin version: see `.codex-plugin/plugin.json` /
 
 ## Layout
 
-- `src/cursor_headless_mcp.py` — FastMCP tools: `cursor_ask`, `cursor_plan`, `cursor_implement`
+- `src/cursor_headless_mcp.py` — FastMCP tools: `cursor_ask`, `cursor_plan`, `cursor_implement`, `cursor_status`
+- `src/progress.py` — stream-json event parse + ProgressAggregator (unit-tested)
+- `src/jobs.py` — job store under `~/.cache/cursor-headless/jobs/`
+- `src/runner.py` — backend switch (`cli` default, opt-in `sdk`)
+- `src/cli_runner.py` — stream-json CLI wrapper runner
+- `src/sdk_runner.py` — cursor-sdk local runner (requires `CURSOR_API_KEY` + `cursor-sdk`)
 - `skills/cursor-headless/scripts/cursor_headless.py` — CLI wrapper (what MCP shells)
 - `skills/cursor-headless/SKILL.md` — routing + parent process (source of truth for behavior)
 - `commands/` — `/cursor-implement`, `/cursor-review-loop`, `/cursor-loop`
@@ -38,18 +43,33 @@ Current plugin version: see `.codex-plugin/plugin.json` /
 8. Claude Code Bash often hard-caps ~10m — launch long runs from parent MCP, not a
    Workflow worker that inherits the Bash reap.
 
+## Backend (`CURSOR_HEADLESS_BACKEND`)
+
+Default **`cli`** (subprocess → `cursor_headless.py` → `cursor-agent --print`).
+Opt-in **`sdk`** uses the Python [`cursor-sdk`](https://cursor.com/docs/sdk/python)
+package with the same MCP tool surface and envelope.
+
+| Backend | Requires | Notes |
+|---------|----------|-------|
+| `cli` | `cursor-agent` on PATH | Default; stream-json progress |
+| `sdk` | `pip install cursor-sdk`, `CURSOR_API_KEY` | Per-call override: MCP `backend="sdk"` |
+
+Set env `CURSOR_HEADLESS_BACKEND=sdk` to make SDK the default for all MCP calls.
+CLI-only installs stay working — SDK is lazy-imported.
+
 ## Commands (contributors)
 
 ```bash
+# Unit tests
+python3 -m unittest discover -s src -p 'test_*.py' -v
+python3 -m unittest tests.test_cli_runner -v
+
 # Wrapper help / smoke (needs cursor-agent on PATH for real runs)
 python3 skills/cursor-headless/scripts/cursor_headless.py --help
 
-# MCP facade (needs uv)
-uv run --with 'mcp>=1.9,<2' --python 3.14 python src/cursor_headless_mcp.py --help 2>/dev/null || true
-
 # Syntax check
 python3 -m py_compile skills/cursor-headless/scripts/cursor_headless.py
-uv run --with 'mcp>=1.9,<2' --python 3.14 python -m py_compile src/cursor_headless_mcp.py
+uv run --with 'mcp>=1.9,<2' --python 3.14 python -c "import sys; sys.path.insert(0,'src'); import cursor_headless_mcp"
 ```
 
 Prove timeout/encoding changes with a fake `cursor-agent` on PATH (sleep / UTF-8
