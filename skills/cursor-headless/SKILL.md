@@ -36,11 +36,10 @@ Fallback CLI wrapper: `scripts/cursor_headless.py` (also what the MCP server cal
 
 ## Backend (CLI vs SDK)
 
-Default backend is **`cli`** (`cursor-agent --print` via the wrapper, MCP forces
-`--output-format stream-json` for live progress). Opt into the Python SDK with env
-`CURSOR_HEADLESS_BACKEND=sdk` or per-call MCP `backend="sdk"`.
-MCP `uv` launch includes `cursor-sdk`; SDK backend still needs `CURSOR_API_KEY`. Same
-tools/envelope, lazy-loaded — default backend remains `cli`.
+Auto: **`sdk`** when `CURSOR_API_KEY` is set, else **`cli`** (`cursor-agent --print`,
+MCP forces `--output-format stream-json` for live progress). Override with MCP
+`backend=` or `CURSOR_HEADLESS_BACKEND`. Windows auto-stays on `cli` (upstream SDK
+Bridge bug). MCP `uv` includes `cursor-sdk`. Same tools/envelope; SDK lazy-loaded.
 
 | CLI flag | SDK backend |
 |----------|-------------|

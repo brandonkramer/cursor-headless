@@ -12,7 +12,7 @@ Current plugin version: see `.codex-plugin/plugin.json` /
 - `src/cursor_headless_mcp.py` — FastMCP tools: `cursor_ask`, `cursor_plan`, `cursor_implement`, `cursor_status`
 - `src/progress.py` — stream-json event parse + ProgressAggregator (unit-tested)
 - `src/jobs.py` — job store under `~/.cache/cursor-headless/jobs/`
-- `src/runner.py` — backend switch (`cli` default, opt-in `sdk`)
+- `src/runner.py` — backend switch (auto `sdk` when `CURSOR_API_KEY` set; else `cli`)
 - `src/cli_runner.py` — stream-json CLI wrapper runner
 - `src/sdk_runner.py` — cursor-sdk local runner (MCP uv includes `cursor-sdk`; still needs `CURSOR_API_KEY`)
 - `skills/cursor-headless/scripts/cursor_headless.py` — CLI wrapper (what MCP shells)
@@ -43,19 +43,22 @@ Current plugin version: see `.codex-plugin/plugin.json` /
 8. Claude Code Bash often hard-caps ~10m — launch long runs from parent MCP, not a
    Workflow worker that inherits the Bash reap.
 
-## Backend (`CURSOR_HEADLESS_BACKEND`)
+## Backend selection
 
-Default **`cli`** (subprocess → `cursor_headless.py` → `cursor-agent --print`).
-Opt-in **`sdk`** uses the Python [`cursor-sdk`](https://cursor.com/docs/sdk/python)
-package with the same MCP tool surface and envelope.
+Resolution order:
+
+1. Per-call MCP `backend="cli"|"sdk"`
+2. Env `CURSOR_HEADLESS_BACKEND=cli|sdk`
+3. **Auto:** `sdk` if `CURSOR_API_KEY` is set, else `cli`
+   (Windows auto stays on `cli` — upstream `cursor-sdk` Bridge `select()` /
+   WinError 10038; force with `backend=sdk` / env if you need to try)
 
 | Backend | Requires | Notes |
 |---------|----------|-------|
-| `cli` | `cursor-agent` on PATH | Default; stream-json progress |
-| `sdk` | `CURSOR_API_KEY` | MCP uv launch includes `cursor-sdk`; per-call override: MCP `backend="sdk"`. Live local agent works on macOS/Linux; Windows currently hits upstream `cursor-sdk` Bridge `select()` / WinError 10038 — use `backend=cli` there until SDK fixes it. |
+| `cli` | `cursor-agent` on PATH | Default when no API key; stream-json progress |
+| `sdk` | `CURSOR_API_KEY` | MCP uv includes `cursor-sdk`; auto when key set (non-Windows) |
 
-Set env `CURSOR_HEADLESS_BACKEND=sdk` to make SDK the default for all MCP calls.
-CLI-only installs stay working — SDK is lazy-imported.
+SDK is lazy-imported — CLI-only installs stay working without a key.
 
 SDK parity vs CLI flags:
 

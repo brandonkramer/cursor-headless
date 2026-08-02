@@ -531,8 +531,8 @@ def run_sdk(
             job_id=resolved_job_id,
             model=resolved_model,
             message=(
-                "error: CURSOR_API_KEY is required for CURSOR_HEADLESS_BACKEND=sdk. "
-                "Set it from Cursor Dashboard → API Keys, or use backend=cli (default)."
+                "error: CURSOR_API_KEY is required for backend=sdk. "
+                "Set it from Cursor Dashboard → API Keys, or use backend=cli."
             ),
         )
 

@@ -1,4 +1,4 @@
-"""Backend switch: CLI wrapper (default) or cursor-sdk."""
+"""Backend switch: CLI wrapper or cursor-sdk (auto when API key is set)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,23 @@ import os
 
 from cli_runner import CliRunResult, ProgressCallback, StatusCallback, run_cli
 from sdk_runner import run_sdk
+
+
+def resolve_backend(backend: str | None = None) -> str:
+    """Pick backend: explicit arg → env → auto (sdk if CURSOR_API_KEY, else cli).
+
+    Windows auto-stays on ``cli`` (upstream cursor-sdk Bridge select() / WinError
+    10038). Force SDK there with ``backend="sdk"`` or ``CURSOR_HEADLESS_BACKEND=sdk``.
+    """
+    for candidate in (backend, os.environ.get("CURSOR_HEADLESS_BACKEND")):
+        selected = (candidate or "").strip().lower()
+        if selected in ("cli", "sdk"):
+            return selected
+
+    has_key = bool(os.environ.get("CURSOR_API_KEY", "").strip())
+    if has_key and os.name != "nt":
+        return "sdk"
+    return "cli"
 
 
 def run_cursor(
@@ -26,7 +43,7 @@ def run_cursor(
     on_progress: ProgressCallback | None = None,
     on_status: StatusCallback | None = None,
 ) -> CliRunResult:
-    selected = (backend or os.environ.get("CURSOR_HEADLESS_BACKEND") or "cli").lower()
+    selected = resolve_backend(backend)
     kwargs = {
         "prompt": prompt,
         "cwd": cwd,
