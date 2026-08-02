@@ -52,7 +52,7 @@ package with the same MCP tool surface and envelope.
 | Backend | Requires | Notes |
 |---------|----------|-------|
 | `cli` | `cursor-agent` on PATH | Default; stream-json progress |
-| `sdk` | `CURSOR_API_KEY` | MCP uv launch includes `cursor-sdk`; per-call override: MCP `backend="sdk"` |
+| `sdk` | `CURSOR_API_KEY` | MCP uv launch includes `cursor-sdk`; per-call override: MCP `backend="sdk"`. Live local agent works on macOS/Linux; Windows currently hits upstream `cursor-sdk` Bridge `select()` / WinError 10038 — use `backend=cli` there until SDK fixes it. |
 
 Set env `CURSOR_HEADLESS_BACKEND=sdk` to make SDK the default for all MCP calls.
 CLI-only installs stay working — SDK is lazy-imported.
