@@ -59,6 +59,10 @@ CLI-only installs stay working — SDK is lazy-imported.
 
 SDK parity vs CLI flags:
 
+- **`fast` / `*-fast`**: SDK has no `composer-2.5-fast` id. Runner maps
+  `prefer_fast` / `*-fast` → `ModelSelection(id=…, params=[fast=true|false])`.
+  Grok CLI ids (`cursor-grok-4.5-{low,medium,high}`) map to `grok-4.5` +
+  `effort=` + `fast=`.
 - **`worktree`**: no native SDK field — runner creates/reuses git worktree at
   `<repo>/.cursor-headless/worktrees/<name>` and sets `LocalAgentOptions(cwd=…)`.
   Worktrees are left on disk (no auto cleanup). Requires a git repo.

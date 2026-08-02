@@ -42,11 +42,63 @@ def _import_sdk() -> object | None:
         return None
 
 
-def _resolve_model(model: str, prefer_fast: bool) -> str:
-    resolved = model
-    if prefer_fast and not resolved.endswith("-fast"):
-        resolved = f"{resolved}-fast"
-    return resolved
+@dataclass(frozen=True)
+class _SdkModelSpec:
+    """SDK model id + params (Fast is a param, not a `*-fast` suffix)."""
+
+    model_id: str
+    fast: bool
+    effort: str | None = None
+
+    @property
+    def label(self) -> str:
+        bits = [self.model_id]
+        if self.effort:
+            bits.append(f"effort={self.effort}")
+        bits.append(f"fast={'true' if self.fast else 'false'}")
+        return " ".join(bits)
+
+
+_GROK_MODEL_RE = re.compile(
+    r"^(?:cursor-)?grok-4\.5(?:-(low|medium|high))?$",
+    re.IGNORECASE,
+)
+
+
+def _parse_sdk_model(model: str, prefer_fast: bool) -> _SdkModelSpec:
+    """Map CLI-style ids (`composer-2.5-fast`, `cursor-grok-4.5-high`) to SDK params."""
+    raw = model.strip()
+    fast = prefer_fast or raw.endswith("-fast")
+    if raw.endswith("-fast"):
+        raw = raw[: -len("-fast")]
+
+    effort: str | None = None
+    model_id = raw
+    match = _GROK_MODEL_RE.fullmatch(raw)
+    if match:
+        model_id = "grok-4.5"
+        effort = (match.group(1) or "high").lower()
+
+    return _SdkModelSpec(model_id=model_id, fast=fast, effort=effort)
+
+
+def _build_model_selection(sdk: object, spec: _SdkModelSpec) -> object:
+    """Build ModelSelection (or dict fallback) with fast/effort params."""
+    params: list[dict[str, str]] = []
+    if spec.effort:
+        params.append({"id": "effort", "value": spec.effort})
+    params.append({"id": "fast", "value": "true" if spec.fast else "false"})
+
+    ModelSelection = getattr(sdk, "ModelSelection", None)
+    ModelParameterValue = getattr(sdk, "ModelParameterValue", None)
+    if ModelSelection is not None and ModelParameterValue is not None:
+        return ModelSelection(
+            id=spec.model_id,
+            params=[
+                ModelParameterValue(id=item["id"], value=item["value"]) for item in params
+            ],
+        )
+    return {"id": spec.model_id, "params": params}
 
 
 def _empty_result(*, job_id: str, model: str, message: str) -> CliRunResult:
@@ -358,8 +410,9 @@ def _build_send_options(
     sdk_mode: str,
     force: bool,
     mode: str,
+    model_selection: object,
 ) -> dict[str, object]:
-    send_kwargs: dict[str, object] = {"mode": sdk_mode}
+    send_kwargs: dict[str, object] = {"mode": sdk_mode, "model": model_selection}
     if not force or mode != "default":
         return send_kwargs
 
@@ -385,7 +438,7 @@ def _open_agent(
     continue_session: bool,
     workspace: str,
     mode: str,
-    resolved_model: str,
+    model_selection: object,
     api_key: str,
     agent_cwd: str,
     on_progress: ProgressCallback | None,
@@ -412,7 +465,7 @@ def _open_agent(
                 on_progress(0.02, resume_note)
 
     return Agent.create(
-        model=resolved_model,
+        model=model_selection,
         api_key=api_key,
         local=LocalAgentOptions(cwd=agent_cwd),
     ), resume_note
@@ -459,7 +512,8 @@ def run_sdk(
 ) -> CliRunResult:
     """Run Cursor via cursor-sdk local agent; return the same envelope as run_cli."""
     resolved_job_id = job_id or uuid.uuid4().hex[:12]
-    resolved_model = _resolve_model(model, prefer_fast)
+    model_spec = _parse_sdk_model(model, prefer_fast)
+    resolved_model = model_spec.label
 
     if force and mode != "default":
         return _empty_result(
@@ -505,6 +559,8 @@ def run_sdk(
             message="error: cursor-sdk is installed but missing Agent/LocalAgentOptions exports",
         )
 
+    model_selection = _build_model_selection(sdk, model_spec)
+
     workspace = str(Path(cwd).resolve())
     worktree_cwd, worktree_err = _prepare_worktree_cwd(
         workspace,
@@ -541,7 +597,7 @@ def run_sdk(
             continue_session=continue_session,
             workspace=workspace,
             mode=mode,
-            resolved_model=resolved_model,
+            model_selection=model_selection,
             api_key=api_key,
             agent_cwd=worktree_cwd,
             on_progress=on_progress,
@@ -556,6 +612,7 @@ def run_sdk(
                 sdk_mode=sdk_mode,
                 force=force,
                 mode=mode,
+                model_selection=model_selection,
             )
             if SendOptions is not None:
                 run = agent.send(effective_prompt, SendOptions(**send_kwargs))

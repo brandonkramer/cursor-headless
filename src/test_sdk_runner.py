@@ -142,6 +142,7 @@ class _FakeLocalSendOptions:
 @dataclass
 class _FakeSendOptions:
     mode: str | None = None
+    model: object | None = None
     local: _FakeLocalSendOptions | dict[str, object] | None = None
 
 
@@ -150,15 +151,69 @@ class _FakeAgentOptions:
     api_key: str | None = None
 
 
+@dataclass
+class _FakeModelParameterValue:
+    id: str
+    value: str
+
+
+@dataclass
+class _FakeModelSelection:
+    id: str
+    params: list[_FakeModelParameterValue] = field(default_factory=list)
+
+
 def _install_fake_sdk(*, include_local_send: bool = True) -> None:
     fake = types.ModuleType("cursor_sdk")
     fake.Agent = _FakeAgent  # type: ignore[attr-defined]
     fake.LocalAgentOptions = _FakeLocalAgentOptions  # type: ignore[attr-defined]
     fake.AgentOptions = _FakeAgentOptions  # type: ignore[attr-defined]
     fake.SendOptions = _FakeSendOptions  # type: ignore[attr-defined]
+    fake.ModelSelection = _FakeModelSelection  # type: ignore[attr-defined]
+    fake.ModelParameterValue = _FakeModelParameterValue  # type: ignore[attr-defined]
     if include_local_send:
         fake.LocalSendOptions = _FakeLocalSendOptions  # type: ignore[attr-defined]
     sys.modules["cursor_sdk"] = fake
+
+
+def _param_map(selection: object) -> dict[str, str]:
+    params = getattr(selection, "params", None) or []
+    out: dict[str, str] = {}
+    for item in params:
+        out[str(getattr(item, "id"))] = str(getattr(item, "value"))
+    return out
+
+
+class SdkModelParseTests(unittest.TestCase):
+    def test_prefer_fast_sets_param_not_suffix(self) -> None:
+        spec = sdk_runner._parse_sdk_model("composer-2.5", True)
+        self.assertEqual(spec.model_id, "composer-2.5")
+        self.assertTrue(spec.fast)
+        self.assertIsNone(spec.effort)
+        self.assertIn("fast=true", spec.label)
+        self.assertNotIn("-fast", spec.model_id)
+
+    def test_suffix_fast_stripped(self) -> None:
+        spec = sdk_runner._parse_sdk_model("composer-2.5-fast", False)
+        self.assertEqual(spec.model_id, "composer-2.5")
+        self.assertTrue(spec.fast)
+
+    def test_non_fast_explicit_false(self) -> None:
+        spec = sdk_runner._parse_sdk_model("composer-2.5", False)
+        self.assertFalse(spec.fast)
+        self.assertIn("fast=false", spec.label)
+
+    def test_cursor_grok_maps_effort_and_fast(self) -> None:
+        spec = sdk_runner._parse_sdk_model("cursor-grok-4.5-medium-fast", False)
+        self.assertEqual(spec.model_id, "grok-4.5")
+        self.assertEqual(spec.effort, "medium")
+        self.assertTrue(spec.fast)
+
+    def test_grok_default_effort_high(self) -> None:
+        spec = sdk_runner._parse_sdk_model("grok-4.5", True)
+        self.assertEqual(spec.model_id, "grok-4.5")
+        self.assertEqual(spec.effort, "high")
+        self.assertTrue(spec.fast)
 
 
 class SdkRunnerTests(unittest.TestCase):
@@ -211,6 +266,78 @@ class SdkRunnerTests(unittest.TestCase):
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["backend"], "sdk")
         self.assertIn("CURSOR_API_KEY", result["result"])
+
+    def test_prefer_fast_uses_model_selection_params(self) -> None:
+        result = sdk_runner.run_sdk(
+            prompt="hi",
+            cwd=".",
+            mode="ask",
+            model="composer-2.5",
+            prefer_fast=True,
+            force=False,
+            worktree=None,
+            skip_preflight=True,
+            continue_session=False,
+            timeout=30,
+            require_diff=False,
+        )
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(len(_CREATE_CALLS), 1)
+        self.assertEqual(len(_SEND_CALLS), 1)
+        create_model = _CREATE_CALLS[0]["model"]
+        self.assertIsInstance(create_model, _FakeModelSelection)
+        assert isinstance(create_model, _FakeModelSelection)
+        self.assertEqual(create_model.id, "composer-2.5")
+        self.assertEqual(_param_map(create_model), {"fast": "true"})
+        _prompt, options = _SEND_CALLS[0]
+        assert isinstance(options, _FakeSendOptions)
+        self.assertIsInstance(options.model, _FakeModelSelection)
+        assert isinstance(options.model, _FakeModelSelection)
+        self.assertEqual(options.model.id, "composer-2.5")
+        self.assertEqual(_param_map(options.model), {"fast": "true"})
+
+    def test_cli_style_fast_suffix_maps_to_params(self) -> None:
+        result = sdk_runner.run_sdk(
+            prompt="hi",
+            cwd=".",
+            mode="ask",
+            model="composer-2.5-fast",
+            prefer_fast=False,
+            force=False,
+            worktree=None,
+            skip_preflight=True,
+            continue_session=False,
+            timeout=30,
+            require_diff=False,
+        )
+        self.assertEqual(result["status"], "ok")
+        create_model = _CREATE_CALLS[0]["model"]
+        assert isinstance(create_model, _FakeModelSelection)
+        self.assertEqual(create_model.id, "composer-2.5")
+        self.assertEqual(_param_map(create_model), {"fast": "true"})
+
+    def test_grok_cli_id_maps_effort_and_fast_params(self) -> None:
+        result = sdk_runner.run_sdk(
+            prompt="hi",
+            cwd=".",
+            mode="ask",
+            model="cursor-grok-4.5-low",
+            prefer_fast=True,
+            force=False,
+            worktree=None,
+            skip_preflight=True,
+            continue_session=False,
+            timeout=30,
+            require_diff=False,
+        )
+        self.assertEqual(result["status"], "ok")
+        create_model = _CREATE_CALLS[0]["model"]
+        assert isinstance(create_model, _FakeModelSelection)
+        self.assertEqual(create_model.id, "grok-4.5")
+        self.assertEqual(
+            _param_map(create_model),
+            {"effort": "low", "fast": "true"},
+        )
 
     def test_progress_callbacks_and_envelope(self) -> None:
         progress: list[tuple[float, str]] = []
