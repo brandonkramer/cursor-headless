@@ -7,7 +7,6 @@ import os
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -45,22 +44,9 @@ class ResolveBackendTests(unittest.TestCase):
     def test_auto_cli_without_key(self) -> None:
         self.assertEqual(runner.resolve_backend(None), "cli")
 
-    def test_auto_sdk_with_key_on_posix(self) -> None:
+    def test_auto_sdk_with_key(self) -> None:
         os.environ["CURSOR_API_KEY"] = "crsr_test"
-        with patch.object(runner.os, "name", "posix"):
-            self.assertEqual(runner.resolve_backend(None), "sdk")
-
-    def test_auto_cli_with_key_on_windows(self) -> None:
-        os.environ["CURSOR_API_KEY"] = "crsr_test"
-        with patch.object(runner.os, "name", "nt"):
-            self.assertEqual(runner.resolve_backend(None), "cli")
-
-    def test_windows_can_force_sdk(self) -> None:
-        os.environ["CURSOR_API_KEY"] = "crsr_test"
-        with patch.object(runner.os, "name", "nt"):
-            self.assertEqual(runner.resolve_backend("sdk"), "sdk")
-            os.environ["CURSOR_HEADLESS_BACKEND"] = "sdk"
-            self.assertEqual(runner.resolve_backend(None), "sdk")
+        self.assertEqual(runner.resolve_backend(None), "sdk")
 
 
 if __name__ == "__main__":

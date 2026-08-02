@@ -15,6 +15,7 @@ Current plugin version: see `.codex-plugin/plugin.json` /
 - `src/runner.py` — backend switch (auto `sdk` when `CURSOR_API_KEY` set; else `cli`)
 - `src/cli_runner.py` — stream-json CLI wrapper runner
 - `src/sdk_runner.py` — cursor-sdk local runner (MCP uv includes `cursor-sdk`; still needs `CURSOR_API_KEY`)
+- `src/sdk_bridge_patch.py` — Windows Bridge discovery patch (WinError 10038)
 - `skills/cursor-headless/scripts/cursor_headless.py` — CLI wrapper (what MCP shells)
 - `skills/cursor-headless/SKILL.md` — routing + parent process (source of truth for behavior)
 - `commands/` — `/cursor-implement`, `/cursor-review-loop`, `/cursor-loop`
@@ -50,13 +51,14 @@ Resolution order:
 1. Per-call MCP `backend="cli"|"sdk"`
 2. Env `CURSOR_HEADLESS_BACKEND=cli|sdk`
 3. **Auto:** `sdk` if `CURSOR_API_KEY` is set, else `cli`
-   (Windows auto stays on `cli` — upstream `cursor-sdk` Bridge `select()` /
-   WinError 10038; force with `backend=sdk` / env if you need to try)
 
 | Backend | Requires | Notes |
 |---------|----------|-------|
 | `cli` | `cursor-agent` on PATH | Default when no API key; stream-json progress |
-| `sdk` | `CURSOR_API_KEY` | MCP uv includes `cursor-sdk`; auto when key set (non-Windows) |
+| `sdk` | `CURSOR_API_KEY` | MCP uv includes `cursor-sdk`; auto when key set |
+
+Windows: `sdk_bridge_patch` replaces upstream Bridge `selectors.select` discovery
+(WinError 10038) with a sleep-poll drain so live SDK works.
 
 SDK is lazy-imported — CLI-only installs stay working without a key.
 

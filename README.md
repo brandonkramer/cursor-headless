@@ -15,7 +15,7 @@ Pass `model` explicitly: simple → `composer-2.5` (or `*-fast` / `fast=true` wh
 
 Parent owns **`timeout`** (default **1200s**, env `CURSOR_HEADLESS_TIMEOUT`). Raise for broad maps; on timeout treat as no result — narrow or raise `timeout` and retry.
 
-**Progress:** MCP runs use `stream-json` + `notifications/progress` (when the host forwards them). Every run returns a structured envelope with `job_id` + `progress_summary`. Poll `cursor_status(job_id)` when the host allows parallel tools. Backend: auto **`sdk`** when `CURSOR_API_KEY` is set (else **`cli`**); override with `backend=` or `CURSOR_HEADLESS_BACKEND`. MCP `uv` includes `cursor-sdk`. Windows auto-stays on `cli` until upstream SDK Bridge works.
+**Progress:** MCP runs use `stream-json` + `notifications/progress` (when the host forwards them). Every run returns a structured envelope with `job_id` + `progress_summary`. Poll `cursor_status(job_id)` when the host allows parallel tools. Backend: auto **`sdk`** when `CURSOR_API_KEY` is set (else **`cli`**); override with `backend=` or `CURSOR_HEADLESS_BACKEND`. MCP `uv` includes `cursor-sdk`.
 
 ## Slash commands (Claude Code + Codex)
 

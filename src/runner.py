@@ -9,18 +9,13 @@ from sdk_runner import run_sdk
 
 
 def resolve_backend(backend: str | None = None) -> str:
-    """Pick backend: explicit arg → env → auto (sdk if CURSOR_API_KEY, else cli).
-
-    Windows auto-stays on ``cli`` (upstream cursor-sdk Bridge select() / WinError
-    10038). Force SDK there with ``backend="sdk"`` or ``CURSOR_HEADLESS_BACKEND=sdk``.
-    """
+    """Pick backend: explicit arg → env → auto (sdk if CURSOR_API_KEY, else cli)."""
     for candidate in (backend, os.environ.get("CURSOR_HEADLESS_BACKEND")):
         selected = (candidate or "").strip().lower()
         if selected in ("cli", "sdk"):
             return selected
 
-    has_key = bool(os.environ.get("CURSOR_API_KEY", "").strip())
-    if has_key and os.name != "nt":
+    if os.environ.get("CURSOR_API_KEY", "").strip():
         return "sdk"
     return "cli"
 

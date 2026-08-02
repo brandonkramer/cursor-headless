@@ -38,8 +38,8 @@ Fallback CLI wrapper: `scripts/cursor_headless.py` (also what the MCP server cal
 
 Auto: **`sdk`** when `CURSOR_API_KEY` is set, else **`cli`** (`cursor-agent --print`,
 MCP forces `--output-format stream-json` for live progress). Override with MCP
-`backend=` or `CURSOR_HEADLESS_BACKEND`. Windows auto-stays on `cli` (upstream SDK
-Bridge bug). MCP `uv` includes `cursor-sdk`. Same tools/envelope; SDK lazy-loaded.
+`backend=` or `CURSOR_HEADLESS_BACKEND`. MCP `uv` includes `cursor-sdk`. Same
+tools/envelope; SDK lazy-loaded. Windows Bridge discovery is patched for live SDK.
 
 | CLI flag | SDK backend |
 |----------|-------------|

@@ -37,6 +37,9 @@ def _import_sdk() -> object | None:
     try:
         import cursor_sdk  # noqa: PLC0415
 
+        from sdk_bridge_patch import apply_windows_bridge_discovery_patch  # noqa: PLC0415
+
+        apply_windows_bridge_discovery_patch()
         return cursor_sdk
     except ImportError:
         return None
