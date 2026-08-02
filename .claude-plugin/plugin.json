@@ -1,6 +1,6 @@
 {
   "name": "cursor-headless",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Delegate to Cursor Agent via MCP (cursor_ask/plan/implement) or CLI. Claude workflows, /cursor-loop scheduling, slash commands; Composer + Grok routing. Shared with Codex.",
   "author": {
     "name": "brandonkramer",

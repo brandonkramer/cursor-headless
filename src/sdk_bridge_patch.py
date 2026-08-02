@@ -3,15 +3,18 @@
 Upstream ``cursor_sdk._bridge._read_discovery`` uses ``selectors.select`` on a
 process stderr fd. On Windows that raises WinError 10038 (not a socket).
 
-We keep the same non-blocking drain loop and replace ``select`` with a short
-sleep poll. No-op on non-Windows or if the hook is already applied.
+A non-blocking ``os.read`` poll is also flaky here when Popen uses ``text=True``
+(Codex MCP path often timed out with \"Timed out waiting for bridge discovery\"
+even though the bridge prints ``cursor-sdk-bridge ready`` quickly).
+
+Fix: background thread + blocking ``readline()``, joined with a deadline.
 """
 
 from __future__ import annotations
 
-import codecs
 import os
 import sys
+import threading
 import time
 from collections.abc import Mapping
 from typing import Any
@@ -45,59 +48,67 @@ def apply_windows_bridge_discovery_patch() -> bool:
     ) -> Mapping[str, Any]:
         if process.stderr is None:
             raise CursorSDKError("Bridge process stderr is unavailable")
-        stderr_fd = process.stderr.fileno()
-        was_blocking = os.get_blocking(stderr_fd)
-        os.set_blocking(stderr_fd, False)
+
+        # Allow longer discovery under slow antivirus / Codex spawn.
         try:
-            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-            deadline = time.monotonic() + timeout
-            stderr_lines: list[str] = []
-            pending = ""
+            override = float(os.environ.get("CURSOR_HEADLESS_SDK_BRIDGE_TIMEOUT", "") or "")
+        except ValueError:
+            override = 0.0
+        if override > 0:
+            timeout = override
+        elif timeout < 60:
+            timeout = 60.0
 
-            def drain_available() -> Mapping[str, Any] | None:
-                nonlocal pending
-                while True:
-                    try:
-                        chunk = os.read(stderr_fd, 8192)
-                    except BlockingIOError:
-                        return None
-                    if not chunk:
-                        final_text = decoder.decode(b"", final=True)
-                        if final_text:
-                            pending += final_text
-                        if pending:
-                            line = pending
-                            pending = ""
-                            stderr_lines.append(line)
-                            return parse_discovery_line(line)
-                        return None
-                    pending += decoder.decode(chunk)
-                    while "\n" in pending:
-                        line, pending = pending.split("\n", 1)
-                        line += "\n"
-                        stderr_lines.append(line)
-                        discovery = parse_discovery_line(line)
-                        if discovery is not None:
-                            return discovery
+        stderr_lines: list[str] = []
+        result: dict[str, Any] = {"discovery": None, "error": None}
+        done = threading.Event()
 
-            while time.monotonic() < deadline:
-                discovery = drain_available()
-                if discovery is not None:
-                    return discovery
-                exit_code = process.poll()
-                if exit_code is not None:
-                    discovery = drain_available()
+        def reader() -> None:
+            try:
+                assert process.stderr is not None
+                while not done.is_set():
+                    line = process.stderr.readline()
+                    if not line:
+                        if process.poll() is not None:
+                            return
+                        time.sleep(0.01)
+                        continue
+                    stderr_lines.append(line)
+                    discovery = parse_discovery_line(line)
                     if discovery is not None:
-                        return discovery
+                        result["discovery"] = discovery
+                        return
+            except Exception as exc:  # noqa: BLE001 — surface to waiter
+                result["error"] = exc
+
+        thread = threading.Thread(target=reader, name="cursor-sdk-bridge-discovery", daemon=True)
+        thread.start()
+        deadline = time.monotonic() + timeout
+        try:
+            while time.monotonic() < deadline:
+                if result["discovery"] is not None:
+                    return result["discovery"]  # type: ignore[return-value]
+                if result["error"] is not None:
+                    raise CursorSDKError(
+                        f"Bridge discovery reader failed: {result['error']}"
+                    )
+                if not thread.is_alive() and result["discovery"] is None:
+                    exit_code = process.poll()
                     raise CursorSDKError(
                         f"Bridge exited before discovery with status {exit_code}: "
-                        + "".join(stderr_lines)
-                        + pending
+                        + "".join(stderr_lines[-20:])
                     )
-                time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
-            raise CursorSDKError("Timed out waiting for bridge discovery")
+                # Wait briefly for the reader; also watch process death.
+                thread.join(timeout=0.1)
+                if result["discovery"] is not None:
+                    return result["discovery"]  # type: ignore[return-value]
+            raise CursorSDKError(
+                "Timed out waiting for bridge discovery; stderr tail: "
+                + ("".join(stderr_lines[-20:]) or "(empty)")
+            )
         finally:
-            os.set_blocking(stderr_fd, was_blocking)
+            done.set()
+            thread.join(timeout=1.0)
 
     bridge._read_discovery = _read_discovery_windows  # type: ignore[assignment]
     bridge._cursor_headless_discovery_patched = True  # type: ignore[attr-defined]

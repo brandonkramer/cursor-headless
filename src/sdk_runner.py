@@ -665,11 +665,15 @@ def run_sdk(
             _persist_agent_id(agent=agent, workspace=workspace, mode=mode)
 
     except Exception as exc:
-        return _empty_result(
+        failed = _empty_result(
             job_id=resolved_job_id,
             model=state.model or resolved_model,
             message=f"error: SDK run failed: {exc}",
         )
+        failed["elapsed_s"] = round(time.monotonic() - started, 2)
+        if state.summary_lines:
+            failed["progress_summary"] = "\n".join(state.summary_lines)
+        return failed
 
     elapsed_s = round(time.monotonic() - started, 2)
     result_text = state.result_text
