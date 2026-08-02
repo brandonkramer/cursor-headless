@@ -1,18 +1,24 @@
-"""Windows-safe patch for cursor-sdk Bridge discovery.
+"""Windows-safe patch for cursor-sdk Bridge under MCP hosts.
 
-Upstream ``cursor_sdk._bridge._read_discovery`` uses ``selectors.select`` on a
-process stderr fd. On Windows that raises WinError 10038 (not a socket).
+Upstream issues on Windows:
 
-A non-blocking ``os.read`` poll is also flaky here when Popen uses ``text=True``
-(Codex MCP path often timed out with \"Timed out waiting for bridge discovery\"
-even though the bridge prints ``cursor-sdk-bridge ready`` quickly).
+1. ``_read_discovery`` uses ``selectors.select`` on a pipe → WinError 10038.
+2. ``Bridge.launch`` uses ``Popen(..., stdin=None)`` so the bridge inherits the
+   parent stdin. Under Codex/Claude MCP that stdin is the JSON-RPC pipe; the
+   bridge then hangs and never prints ``cursor-sdk-bridge ready`` (empty stderr
+   until discovery timeout). Interactive / closed-stdin runs still work.
 
-Fix: background thread + blocking ``readline()``, joined with a deadline.
+Fixes:
+
+- Threaded blocking ``readline()`` discovery (no selectors).
+- Wrap ``Bridge.launch`` so bridge ``Popen`` uses ``stdin=DEVNULL`` and
+  ``CREATE_NO_WINDOW``.
 """
 
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -23,7 +29,7 @@ _PATCHED = False
 
 
 def apply_windows_bridge_discovery_patch() -> bool:
-    """Patch cursor_sdk bridge discovery for Windows. Returns True if applied."""
+    """Patch cursor_sdk bridge launch + discovery for Windows. Returns True if applied."""
     global _PATCHED
     if _PATCHED or os.name != "nt":
         return False
@@ -41,6 +47,7 @@ def apply_windows_bridge_discovery_patch() -> bool:
 
     parse_discovery_line = bridge.parse_discovery_line
     CursorSDKError = bridge.CursorSDKError
+    create_no_window = int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
     def _read_discovery_windows(
         process: Any,
@@ -49,7 +56,6 @@ def apply_windows_bridge_discovery_patch() -> bool:
         if process.stderr is None:
             raise CursorSDKError("Bridge process stderr is unavailable")
 
-        # Allow longer discovery under slow antivirus / Codex spawn.
         try:
             override = float(os.environ.get("CURSOR_HEADLESS_SDK_BRIDGE_TIMEOUT", "") or "")
         except ValueError:
@@ -98,18 +104,28 @@ def apply_windows_bridge_discovery_patch() -> bool:
                         f"Bridge exited before discovery with status {exit_code}: "
                         + "".join(stderr_lines[-20:])
                     )
-                # Wait briefly for the reader; also watch process death.
                 thread.join(timeout=0.1)
                 if result["discovery"] is not None:
                     return result["discovery"]  # type: ignore[return-value]
             raise CursorSDKError(
-                "Timed out waiting for bridge discovery; stderr tail: "
+                "Timed out waiting for bridge discovery; "
+                f"pid={getattr(process, 'pid', None)} poll={process.poll()}; "
+                "stderr tail: "
                 + ("".join(stderr_lines[-20:]) or "(empty)")
             )
         finally:
             done.set()
             thread.join(timeout=1.0)
 
+    original_popen = bridge.subprocess.Popen  # type: ignore[attr-defined]
+
+    def _popen_no_inherit_stdin(*args: Any, **kwargs: Any) -> Any:
+        kwargs.setdefault("stdin", subprocess.DEVNULL)
+        if create_no_window:
+            kwargs["creationflags"] = int(kwargs.get("creationflags", 0)) | create_no_window
+        return original_popen(*args, **kwargs)
+
+    bridge.subprocess.Popen = _popen_no_inherit_stdin  # type: ignore[attr-defined]
     bridge._read_discovery = _read_discovery_windows  # type: ignore[assignment]
     bridge._cursor_headless_discovery_patched = True  # type: ignore[attr-defined]
     _PATCHED = True
