@@ -188,7 +188,7 @@ def prove_live_cursor_agent() -> None:
     from envelope import format_envelope
     from jobs import create_job, get_status_text, update_job_from_status
 
-    with tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         os.environ["CURSOR_HEADLESS_JOB_DIR"] = str(Path(td) / "jobs")
         jid = create_job()
         update_job_from_status(jid, {"message": "live start"}, state="running")
