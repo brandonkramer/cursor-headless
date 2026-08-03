@@ -14,7 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from subprocess import DEVNULL, PIPE, Popen
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 WRAPPER = PLUGIN_ROOT / "skills" / "cursor-headless" / "scripts" / "cursor_headless.py"
@@ -34,6 +34,17 @@ class CliRunResult(TypedDict):
     result: str
     stderr: str
     exit_code: int
+    # Cloud-agent extras (sdk-cloud backend)
+    runtime: NotRequired[str]
+    agent_id: NotRequired[str]
+    repo_url: NotRequired[str]
+    pr_url: NotRequired[str]
+    cloud_env: NotRequired[str]
+    cloud_env_name: NotRequired[str]
+    delivery: NotRequired[str]
+    review_url: NotRequired[str]
+    review_id: NotRequired[str]
+    usage: NotRequired[dict[str, int]]
 
 
 @dataclass

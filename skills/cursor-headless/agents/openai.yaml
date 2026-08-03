@@ -1,4 +1,4 @@
 interface:
   display_name: "Cursor Headless"
-  short_description: "MCP tools cursor_ask / cursor_plan / cursor_implement"
-  default_prompt: "For cursor_ask/plan pick Grok 4.5 low/medium/high and whether to use Fast (default high, non-Fast). For cursor_implement default composer-2.5; opt into Fast or escalate to Grok by complexity. Parent sets timeout per call (default 1200s); on timeout treat as no result and narrow or raise timeout."
+  short_description: "MCP cursor_ask/plan/implement + cursor_cloud_plan/review/implement"
+  default_prompt: "Local cursor_ask/plan: Grok 4.5 low/medium/high (+ Fast optional). Local cursor_implement: composer-2.5 default; escalate Grok by complexity. Cloud VM: cursor_cloud_* with repo_url + CURSOR_API_KEY; cursor_cloud_review delivery=pr_review posts GitHub PR review via host gh (needs pr_url). Parent sets timeout (default 1200s); on timeout treat as no result."

@@ -2,21 +2,28 @@
 
 Thin MCP tools + skill for **Codex** and **Claude Code**, backed by the
 **[Cursor SDK](https://cursor.com/docs/sdk/python)** (preferred when configured)
-or `cursor-agent --print` (CLI fallback). Same `cursor_ask` / `cursor_plan` /
-`cursor_implement` tools either way — often faster on the SDK path for short asks.
+or `cursor-agent --print` (CLI fallback). Local `cursor_ask` / `cursor_plan` /
+`cursor_implement` plus cloud `cursor_cloud_*` tools for VM/pool agents.
 
 ## Tools
 
 | Tool | Mode | Default model |
 |------|------|----------------|
-| `cursor_ask` | ask (read-only) | `cursor-grok-4.5-high` (pick low\|medium\|high + Fast) |
-| `cursor_plan` | plan (read-only) | `cursor-grok-4.5-high` (pick low\|medium\|high + Fast) |
-| `cursor_implement` | default + force | `composer-2.5` (opt into Fast; escalate to Grok 4.5 low/medium/high by complexity) |
+| `cursor_ask` | local ask (read-only) | `cursor-grok-4.5-high` (pick low\|medium\|high + Fast) |
+| `cursor_plan` | local plan (read-only) | `cursor-grok-4.5-high` (pick low\|medium\|high + Fast) |
+| `cursor_implement` | local default + force | `composer-2.5` (opt into Fast; escalate to Grok by complexity) |
+| `cursor_cloud_plan` | cloud VM plan | `cursor-grok-4.5-high` (`repo_url` required) |
+| `cursor_cloud_review` | cloud VM review | `cursor-grok-4.5-high` (`repo_url` / `pr_url`; `delivery=findings\|pr_review` — latter posts inline PR review via host `gh`) |
+| `cursor_cloud_implement` | cloud VM write + optional PR | `composer-2.5` (`auto_create_pr` default true) |
 | `cursor_status` | read job store | — (poll progress by `job_id`) |
 
 Pass `model` explicitly: simple → `composer-2.5` (or `fast=true` / `*-fast` when latency matters); light → `cursor-grok-4.5-low`; medium → `…-medium`; hard → `…-high`.
 
-Parent owns **`timeout`** (default **1200s**, env `CURSOR_HEADLESS_TIMEOUT`). Raise for broad maps; on timeout treat as no result — narrow or raise `timeout` and retry.
+Parent owns **`timeout`** (default **1200s**, env `CURSOR_HEADLESS_TIMEOUT`; cloud can use `CURSOR_HEADLESS_CLOUD_TIMEOUT`). Raise for broad maps; on timeout treat as no result — narrow or raise `timeout` and retry.
+
+**Cloud:** needs `CURSOR_API_KEY` + GitHub `repo_url`. Use for unattended / PR work; resume via `agent_id` (`bc-…`). Local tools stay on `cwd`.
+
+`cursor_cloud_review` with `delivery=pr_review` also needs **`gh`** authenticated on the MCP host (not the cloud VM). The posted review top comment is titled **## Cursor cloud PR review** with model/elapsed/tokens in a collapsed `<details>` block; the envelope adds `delivery`, `review_url`, `review_id`, and `usage` when reported.
 
 **Progress:** MCP runs use `stream-json` + `notifications/progress` (when the host forwards them). Every run returns a structured envelope with `job_id` + `progress_summary`. Poll `cursor_status(job_id)` when the host allows parallel tools.
 
@@ -102,7 +109,8 @@ Stop with `Esc` while waiting, or ask to cancel the cron job. For durable unatte
 - `skills/cursor-headless/` — shared routing skill + CLI wrapper
 - `src/cursor_headless_mcp.py` — FastMCP facade
 - `src/runner.py` — backend auto-select (`cli` / `sdk`)
-- `src/sdk_runner.py` / `sdk_bridge_patch.py` — SDK path + Windows Bridge fix
+- `src/sdk_runner.py` / `sdk_cloud_runner.py` / `sdk_bridge_patch.py` — SDK local + cloud + Windows Bridge fix
+- `src/pr_review_publish.py` / `pr_diff.py` — GitHub PR review publish (`delivery=pr_review`)
 - `bin/cursor-headless-mcp` — optional launcher
 
 Requires **`uv`**. Prefer the **SDK** path (API key in env; `cursor-sdk` pulled by

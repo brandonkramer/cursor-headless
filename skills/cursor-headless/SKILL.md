@@ -2,11 +2,12 @@
 name: cursor-headless
 description: >-
   Delegate to Cursor Agent from Codex or Claude Code via thin MCP tools
-  (cursor_ask/plan/implement) or `cursor-agent --print` headless mode. Ask/plan
-  default to Grok 4.5 High (pick low|medium|high and Fast); implement defaults to
-  Composer 2.5 (opt into Fast) and escalates to Grok 4.5 by complexity. Covers
-  ask/plan/write modes, worktrees, cached preflight, and controlled write-capable
-  runs. Use when the user asks for Cursor CLI, Cursor Agent, Cursor headless,
+  (cursor_ask/plan/implement and cursor_cloud_plan/review/implement) or
+  `cursor-agent --print` headless mode. Ask/plan default to Grok 4.5 High (pick
+  low|medium|high and Fast); implement defaults to Composer 2.5 (opt into Fast)
+  and escalates to Grok 4.5 by complexity. Covers local + cloud VM agents,
+  worktrees, cached preflight, and controlled write-capable runs. Use when the
+  user asks for Cursor CLI, Cursor Agent, Cursor headless, Cursor cloud agents,
   Composer 2.5, Grok 4.5 via Cursor, or Cursor as a secondary agent.
 triggers:
   - "cursor implement"
@@ -26,15 +27,74 @@ work via MCP. Prefer the **Cursor SDK** backend when an API key is configured;
 otherwise fall back to **`cli`** (`cursor-agent --print`). Same tools and
 envelope either way — SDK is often faster for short asks.
 
-**Prefer MCP tools** (`cursor_ask` / `cursor_plan` / `cursor_implement`):
+**Prefer MCP tools** — local worktree vs cloud VM are separate entrypoints:
 
 | Tool | Use | Default model |
 |------|-----|----------------|
-| `cursor_ask` | Read-only Q&A (`--mode ask`) | `cursor-grok-4.5-high` — **you pick tier + Fast** |
-| `cursor_plan` | Read-only explore/plan (`--mode plan`) | `cursor-grok-4.5-high` — **you pick tier + Fast** |
-| `cursor_implement` | Writes (`--mode default`, `--force`) | `composer-2.5` — **you pick by complexity / when to use Fast** |
+| `cursor_ask` | Local read-only Q&A | `cursor-grok-4.5-high` — **you pick tier + Fast** |
+| `cursor_plan` | Local read-only explore/plan | `cursor-grok-4.5-high` — **you pick tier + Fast** |
+| `cursor_implement` | Local writes | `composer-2.5` — **you pick by complexity / when to use Fast** |
+| `cursor_cloud_plan` | Cloud VM plan/explore (`repo_url`) | `cursor-grok-4.5-high` |
+| `cursor_cloud_review` | Cloud VM read-only review (`repo_url` / `pr_url`) | `cursor-grok-4.5-high` |
+| `cursor_cloud_implement` | Cloud VM writes + optional PR | `composer-2.5` |
 
-CLI wrapper fallback: `scripts/cursor_headless.py` (MCP `cli` path).
+CLI wrapper fallback: `scripts/cursor_headless.py` (MCP `cli` path; local only).
+
+### Cloud agents (separate tools)
+
+Use when work should run on a Cursor cloud VM (or self-hosted `pool` / `machine`),
+survive disconnects, and optionally open a PR. Requires `CURSOR_API_KEY` +
+`repo_url` (`https://github.com/org/repo`). Not a speed-up for tiny local asks.
+
+```text
+cursor_cloud_plan(prompt="…", repo_url="https://github.com/org/repo", starting_ref="main")
+cursor_cloud_review(prompt="…", repo_url="…", pr_url="https://github.com/org/repo/pull/12")
+# findings in envelope (default) OR GitHub PR review comments via host `gh`:
+cursor_cloud_review(prompt="…", repo_url="…", pr_url="…", delivery="findings")
+cursor_cloud_review(prompt="…", repo_url="…", pr_url="…", delivery="pr_review", review_event="COMMENT")
+cursor_cloud_implement(prompt="…", repo_url="…", auto_create_pr=true, fast=true)
+# Detach / resume:
+cursor_cloud_implement(prompt="…", repo_url="…", wait=false)  # returns agent_id bc-…
+cursor_cloud_implement(prompt="continue…", repo_url="…", agent_id="bc-…")
+```
+
+`delivery=pr_review` runs the cloud review, then submits a real GitHub PR review
+via host `gh` auth (not the cloud-agent token): summary body plus inline comments
+on **Files changed** when possible. Supports multi-line ranges (`start_line` /
+`start_side`), file-level notes (`subject_type: file`), and applyable suggestions
+(```suggestion``` fences from a `suggestion` field). Comments are filtered to
+PR diff lines before POST; out-of-diff lines are dropped or appended to the summary.
+`review_event`: `COMMENT` | `REQUEST_CHANGES` | `APPROVE`. Default
+`delivery=findings` leaves results in the envelope only.
+
+GitHub top comment shape when `delivery=pr_review` (posted via host `gh`; summary
+is collapsed metadata + model findings):
+
+```markdown
+## Cursor cloud PR review
+
+<details>
+<summary><code>cursor-grok-4.5-high</code> · 28.1s · 12,345 tokens · 2 inline</summary>
+
+- **Model:** `cursor-grok-4.5-high`
+- **Elapsed:** 28.1s
+- **Tokens:** 12,345 total (in 8,000 · out 4,345)
+- **Event:** `COMMENT`
+- **Inline comments:** 2
+- **Agent:** `bc-…`
+- **Job:** `…`
+- **Backend:** `sdk-cloud`
+
+</details>
+
+---
+
+<model summary markdown>
+```
+
+Envelope extras: `runtime: cloud`, `agent_id`, `repo_url`, optional `pr_url`,
+`delivery`, `review_url`, `review_id`, `usage` (when SDK reports tokens),
+`cloud_env`. Timeout env: `CURSOR_HEADLESS_CLOUD_TIMEOUT` (else same as local default).
 
 ## Cursor SDK (preferred) vs CLI
 

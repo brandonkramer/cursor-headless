@@ -9,12 +9,16 @@ Current plugin version: see `.codex-plugin/plugin.json` /
 
 ## Layout
 
-- `src/cursor_headless_mcp.py` — FastMCP tools: `cursor_ask`, `cursor_plan`, `cursor_implement`, `cursor_status`
+- `src/cursor_headless_mcp.py` — FastMCP tools: local `cursor_ask` / `cursor_plan` /
+  `cursor_implement`, cloud `cursor_cloud_plan` / `cursor_cloud_review` /
+  `cursor_cloud_implement`, plus `cursor_status`
 - `src/progress.py` — stream-json event parse + ProgressAggregator (unit-tested)
 - `src/jobs.py` — job store under `~/.cache/cursor-headless/jobs/`
 - `src/runner.py` — backend switch (auto `sdk` when `CURSOR_API_KEY` set; else `cli`)
 - `src/cli_runner.py` — stream-json CLI wrapper runner
 - `src/sdk_runner.py` — cursor-sdk local runner (MCP uv includes `cursor-sdk`; still needs `CURSOR_API_KEY`)
+- `src/sdk_cloud_runner.py` — cursor-sdk cloud VM runner (`delivery=findings|pr_review` on review)
+- `src/pr_review_publish.py` / `src/pr_diff.py` — GitHub PR review POST via host `gh` (not cloud token)
 - `src/sdk_bridge_patch.py` — Windows Bridge discovery patch (WinError 10038)
 - `skills/cursor-headless/scripts/cursor_headless.py` — CLI wrapper (what MCP shells)
 - `skills/cursor-headless/SKILL.md` — routing + parent process (source of truth for behavior)
