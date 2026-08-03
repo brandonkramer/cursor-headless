@@ -25,7 +25,7 @@ Parent owns **`timeout`** (default **1200s**, env `CURSOR_HEADLESS_TIMEOUT`; clo
 
 `cursor_cloud_review` with `delivery=pr_review` also needs **`gh`** authenticated on the MCP host (not the cloud VM). The posted review top comment is titled **## Cursor cloud PR review** with model/elapsed/tokens in a collapsed `<details>` block; the envelope adds `delivery`, `review_url`, `review_id`, and `usage` when reported.
 
-**Progress:** MCP runs use `stream-json` + `notifications/progress` (when the host forwards them). Every run returns a structured envelope with `job_id` + `progress_summary`. Poll `cursor_status(job_id)` when the host allows parallel tools.
+**Progress:** MCP runs use `stream-json` + `notifications/progress` (when the host forwards them). Every run returns a structured envelope with `job_id` + `progress_summary`. Long `cursor_*` tools run off the MCP request thread (`asyncio.to_thread`), so parallel `cursor_status(job_id)` polls can answer while a job is in flight.
 
 ## Cursor SDK (and CLI fallback)
 

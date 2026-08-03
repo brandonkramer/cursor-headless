@@ -159,7 +159,9 @@ do not). Never print the key; never pass `--api-key` on argv.
 2. While a long call runs, hosts may surface MCP `notifications/progress` in the UI —
    that may **not** enter the model context until the tool returns.
 3. If the host allows parallel tools: poll `cursor_status(job_id)` (reads
-   `~/.cache/cursor-headless/jobs/<id>.json`).
+   `~/.cache/cursor-headless/jobs/<id>.json`). Long Cursor runs are offloaded from
+   the MCP request thread, so status polls should not hang behind an in-flight
+   `cursor_ask` / `plan` / `implement`.
 4. Timeout / empty / error still means **no result** for findings — use
    `progress_summary` only as telemetry.
 
@@ -235,6 +237,20 @@ worker; timeout ≠ completed audit.
 3. **Launch** via MCP (`timeout=` optional; default **1200s**) or wrapper (`--timeout`).
 4. **On timeout / empty / error** → treat as **no result**. Do not invent findings.
 5. **Retry** by narrowing scope **or** raising `timeout` (e.g. 1800). Prefer narrow first.
+
+**Codex host vs tool `timeout`:** Codex can kill `tools/call` with
+`tool_timeout_sec` (often 60–300s) **before** the MCP arg `timeout=` / default
+1200s finishes. Error looks like `timed out awaiting tools/call after 300s`.
+Fix in `~/.codex/config.toml`:
+
+```toml
+[plugins."cursor-headless@cursor-headless".mcp_servers.cursor-headless]
+tool_timeout_sec = 1800
+startup_timeout_sec = 120
+```
+
+Restart Codex after changing. Plugin ships `tool_timeout_sec = 1800` in
+`.codex-plugin/plugin.json` (reinstall/reload to pick up).
 6. **Integrate** worker evidence; parent remains final reviewer.
 
 ### Timeout guidance (parent-controlled)

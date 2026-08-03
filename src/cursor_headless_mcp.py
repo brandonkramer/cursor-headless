@@ -3,9 +3,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
+import threading
 import time
+from collections.abc import Callable
+from typing import Any
 
 from mcp.server.fastmcp import Context, FastMCP
 
@@ -24,6 +28,8 @@ mcp = FastMCP("cursor-headless")
 register_status_tool(mcp)
 
 _INFO_INTERVAL_SEC = 5.0
+ProgressFn = Callable[[float, str], None]
+StatusFn = Callable[[dict[str, object]], None]
 
 
 def _configure_utf8_stdio() -> None:
@@ -45,6 +51,87 @@ def _configure_utf8_stdio() -> None:
 _configure_utf8_stdio()
 
 
+def _schedule_coro(loop: asyncio.AbstractEventLoop, coro: Any) -> None:
+    """Fire-and-forget a coroutine onto the MCP event loop from a worker thread."""
+
+    def _done(fut: asyncio.Future[Any]) -> None:
+        try:
+            fut.result()
+        except Exception:
+            # Progress notifications are best-effort; never kill the worker.
+            pass
+
+    try:
+        fut = asyncio.run_coroutine_threadsafe(coro, loop)
+    except RuntimeError:
+        # Loop closed / not running — drop notification.
+        try:
+            coro.close()
+        except Exception:
+            pass
+        return
+    fut.add_done_callback(_done)
+
+
+def _bind_job_callbacks(
+    *,
+    job_id: str,
+    phase: str,
+    model: str,
+    started: float,
+    ctx: Context | None,
+    progress: bool,
+    loop: asyncio.AbstractEventLoop | None,
+    extra_status: dict[str, object] | None = None,
+) -> tuple[ProgressFn | None, StatusFn | None]:
+    """Build worker-thread callbacks: always update job store; optionally notify MCP ctx."""
+    last_info_at = 0.0
+    info_lock = threading.Lock()
+    base_extra = dict(extra_status or {})
+
+    def on_progress(value: float, message: str) -> None:
+        nonlocal last_info_at
+        status: dict[str, object] = {
+            "phase": phase,
+            "model": model,
+            "message": message,
+            "progress": value,
+            "elapsed_sec": round(time.monotonic() - started, 1),
+            **base_extra,
+        }
+        update_job_from_status(job_id, status, state="running")
+        if not ctx or not progress or loop is None:
+            return
+        _schedule_coro(
+            loop,
+            ctx.report_progress(value, total=None, message=message),
+        )
+        with info_lock:
+            now = time.monotonic()
+            if now - last_info_at < _INFO_INTERVAL_SEC:
+                return
+            last_info_at = now
+        _schedule_coro(loop, ctx.info(message))
+
+    def on_status(event: dict[str, object]) -> None:
+        update_job_from_status(
+            job_id,
+            {
+                "phase": phase,
+                "model": model,
+                "event": event.get("type"),
+                "subtype": event.get("subtype"),
+                "elapsed_sec": round(time.monotonic() - started, 1),
+                **base_extra,
+            },
+            state="running",
+        )
+
+    if not progress:
+        return None, None
+    return on_progress, on_status
+
+
 def _dispatch(
     *,
     prompt: str,
@@ -61,51 +148,24 @@ def _dispatch(
     backend: str | None,
     ctx: Context | None,
     progress: bool,
+    loop: asyncio.AbstractEventLoop | None = None,
 ) -> str:
     job_id = create_job()
     started = time.monotonic()
-    last_info_at = 0.0
     update_job_from_status(
         job_id,
         {"phase": mode, "model": model, "message": "starting"},
         state="running",
     )
-
-    def on_progress(value: float, message: str) -> None:
-        nonlocal last_info_at
-        update_job_from_status(
-            job_id,
-            {
-                "phase": mode,
-                "model": model,
-                "message": message,
-                "progress": value,
-                "elapsed_sec": round(time.monotonic() - started, 1),
-            },
-            state="running",
-        )
-        if not ctx or not progress:
-            return
-        ctx.report_progress(value, total=None, message=message)
-        now = time.monotonic()
-        if now - last_info_at >= _INFO_INTERVAL_SEC:
-            ctx.info(message)
-            last_info_at = now
-
-    def on_status(event: dict[str, object]) -> None:
-        etype = event.get("type")
-        subtype = event.get("subtype")
-        update_job_from_status(
-            job_id,
-            {
-                "phase": mode,
-                "model": model,
-                "event": etype,
-                "subtype": subtype,
-                "elapsed_sec": round(time.monotonic() - started, 1),
-            },
-            state="running",
-        )
+    on_progress, on_status = _bind_job_callbacks(
+        job_id=job_id,
+        phase=mode,
+        model=model,
+        started=started,
+        ctx=ctx,
+        progress=progress,
+        loop=loop,
+    )
 
     result = run_cursor(
         backend=backend,
@@ -121,8 +181,8 @@ def _dispatch(
         timeout=timeout,
         require_diff=require_diff,
         job_id=job_id,
-        on_progress=on_progress if progress else None,
-        on_status=on_status if progress else None,
+        on_progress=on_progress,
+        on_status=on_status,
     )
     terminal: str = result["status"]
     job_state: JobState = (
@@ -165,54 +225,31 @@ def _dispatch_cloud(
     review_event: str = "COMMENT",
     ctx: Context | None = None,
     progress: bool = True,
+    loop: asyncio.AbstractEventLoop | None = None,
 ) -> str:
     job_id = create_job()
     started = time.monotonic()
-    last_info_at = 0.0
+    phase = f"cloud-{kind}"
     update_job_from_status(
         job_id,
         {
-            "phase": f"cloud-{kind}",
+            "phase": phase,
             "model": model,
             "message": "starting cloud agent",
             "repo_url": repo_url,
         },
         state="running",
     )
-
-    def on_progress(value: float, message: str) -> None:
-        nonlocal last_info_at
-        update_job_from_status(
-            job_id,
-            {
-                "phase": f"cloud-{kind}",
-                "model": model,
-                "message": message,
-                "progress": value,
-                "elapsed_sec": round(time.monotonic() - started, 1),
-            },
-            state="running",
-        )
-        if not ctx or not progress:
-            return
-        ctx.report_progress(value, total=None, message=message)
-        now = time.monotonic()
-        if now - last_info_at >= _INFO_INTERVAL_SEC:
-            ctx.info(message)
-            last_info_at = now
-
-    def on_status(event: dict[str, object]) -> None:
-        update_job_from_status(
-            job_id,
-            {
-                "phase": f"cloud-{kind}",
-                "model": model,
-                "event": event.get("type"),
-                "subtype": event.get("subtype"),
-                "elapsed_sec": round(time.monotonic() - started, 1),
-            },
-            state="running",
-        )
+    on_progress, on_status = _bind_job_callbacks(
+        job_id=job_id,
+        phase=phase,
+        model=model,
+        started=started,
+        ctx=ctx,
+        progress=progress,
+        loop=loop,
+        extra_status={"repo_url": repo_url},
+    )
 
     result = run_cloud_sdk(
         kind=kind,
@@ -235,8 +272,8 @@ def _dispatch_cloud(
         delivery=delivery,  # type: ignore[arg-type]
         review_event=review_event,  # type: ignore[arg-type]
         job_id=job_id,
-        on_progress=on_progress if progress else None,
-        on_status=on_status if progress else None,
+        on_progress=on_progress,
+        on_status=on_status,
     )
     terminal: str = result["status"]
     job_state: JobState = (
@@ -245,7 +282,7 @@ def _dispatch_cloud(
     update_job_from_status(
         job_id,
         {
-            "phase": f"cloud-{kind}",
+            "phase": phase,
             "model": result.get("model") or model,
             "message": f"finished status={terminal}",
             "tools": result.get("tools"),
@@ -258,8 +295,21 @@ def _dispatch_cloud(
     return format_envelope(result)
 
 
+async def _run_dispatch(**kwargs: Any) -> str:
+    """Offload blocking Cursor work so the MCP event loop can serve cursor_status."""
+    kwargs = dict(kwargs)
+    kwargs["loop"] = asyncio.get_running_loop()
+    return await asyncio.to_thread(_dispatch, **kwargs)
+
+
+async def _run_dispatch_cloud(**kwargs: Any) -> str:
+    kwargs = dict(kwargs)
+    kwargs["loop"] = asyncio.get_running_loop()
+    return await asyncio.to_thread(_dispatch_cloud, **kwargs)
+
+
 @mcp.tool()
-def cursor_ask(
+async def cursor_ask(
     prompt: str,
     cwd: str = ".",
     model: str = "cursor-grok-4.5-high",
@@ -279,8 +329,10 @@ def cursor_ask(
     Parent/orchestrator owns timeout (default 1200s, or CURSOR_HEADLESS_TIMEOUT).
     Raise for broad multi-app maps; lower for tiny one-shot Q&A. On timeout: no result —
     narrow the prompt or raise timeout and retry.
+
+    Runs off the MCP request thread so parallel `cursor_status` polls can answer.
     """
-    return _dispatch(
+    return await _run_dispatch(
         prompt=prompt,
         cwd=cwd,
         mode="ask",
@@ -299,7 +351,7 @@ def cursor_ask(
 
 
 @mcp.tool()
-def cursor_plan(
+async def cursor_plan(
     prompt: str,
     cwd: str = ".",
     model: str = "cursor-grok-4.5-high",
@@ -319,8 +371,10 @@ def cursor_plan(
     Parent/orchestrator owns timeout (default 1200s, or CURSOR_HEADLESS_TIMEOUT).
     Broad duplicate/consumer inventory often needs 1200–1800 or a narrower path slice.
     On timeout: treat as no result — do not invent findings; narrow or raise timeout.
+
+    Runs off the MCP request thread so parallel `cursor_status` polls can answer.
     """
-    return _dispatch(
+    return await _run_dispatch(
         prompt=prompt,
         cwd=cwd,
         mode="plan",
@@ -339,7 +393,7 @@ def cursor_plan(
 
 
 @mcp.tool()
-def cursor_implement(
+async def cursor_implement(
     prompt: str,
     cwd: str = ".",
     model: str = "composer-2.5",
@@ -367,8 +421,10 @@ def cursor_implement(
 
     Parent/orchestrator owns timeout (default 1200s, or CURSOR_HEADLESS_TIMEOUT).
     Raise for large write slices; prefer smaller slices when possible. On timeout: no result.
+
+    Runs off the MCP request thread so parallel `cursor_status` polls can answer.
     """
-    return _dispatch(
+    return await _run_dispatch(
         prompt=prompt,
         cwd=cwd,
         mode="default",
@@ -387,7 +443,7 @@ def cursor_implement(
 
 
 @mcp.tool()
-def cursor_cloud_plan(
+async def cursor_cloud_plan(
     prompt: str,
     repo_url: str,
     model: str = "cursor-grok-4.5-high",
@@ -411,7 +467,7 @@ def cursor_cloud_plan(
     Default model cursor-grok-4.5-high. Does not edit; use cursor_cloud_implement to write.
     Envelope includes agent_id (bc-…) for resume. On timeout: no result.
     """
-    return _dispatch_cloud(
+    return await _run_dispatch_cloud(
         kind="plan",
         prompt=prompt,
         repo_url=repo_url,
@@ -435,7 +491,7 @@ def cursor_cloud_plan(
 
 
 @mcp.tool()
-def cursor_cloud_review(
+async def cursor_cloud_review(
     prompt: str,
     repo_url: str,
     model: str = "cursor-grok-4.5-high",
@@ -468,7 +524,7 @@ def cursor_cloud_review(
     review_event for delivery=pr_review: COMMENT | REQUEST_CHANGES | APPROVE.
     Does not implement fixes (use cursor_cloud_implement). On timeout: no result.
     """
-    return _dispatch_cloud(
+    return await _run_dispatch_cloud(
         kind="review",
         prompt=prompt,
         repo_url=repo_url,
@@ -494,7 +550,7 @@ def cursor_cloud_review(
 
 
 @mcp.tool()
-def cursor_cloud_implement(
+async def cursor_cloud_implement(
     prompt: str,
     repo_url: str,
     model: str = "composer-2.5",
@@ -521,7 +577,7 @@ def cursor_cloud_implement(
     cloud_env_type + cloud_env_name. Set wait=false to detach after start and resume
     later with agent_id. Envelope may include pr_url. On timeout: no result.
     """
-    return _dispatch_cloud(
+    return await _run_dispatch_cloud(
         kind="implement",
         prompt=prompt,
         repo_url=repo_url,
