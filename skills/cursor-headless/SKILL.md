@@ -13,6 +13,9 @@ triggers:
   - "cursor implement"
   - "cursor-agent implement"
   - "cursor headless"
+  - "cursor cloud"
+  - "cursor cloud review"
+  - "cursor PR review"
   - "delegate implementation to cursor"
   - "composer implement"
   - "grok implement"
@@ -53,17 +56,32 @@ cursor_cloud_review(prompt="…", repo_url="…", pr_url="https://github.com/org
 cursor_cloud_review(prompt="…", repo_url="…", pr_url="…", delivery="findings")
 cursor_cloud_review(prompt="…", repo_url="…", pr_url="…", delivery="pr_review", review_event="COMMENT")
 cursor_cloud_implement(prompt="…", repo_url="…", auto_create_pr=true, fast=true)
-# Detach / resume:
+# Detach / resume (opt-in — not automatic on new PR commits):
 cursor_cloud_implement(prompt="…", repo_url="…", wait=false)  # returns agent_id bc-…
 cursor_cloud_implement(prompt="continue…", repo_url="…", agent_id="bc-…")
+cursor_cloud_implement(prompt="continue…", repo_url="…", continue_session=true)
 ```
 
+**Cloud session reuse (default = new agent each call):**
+
+| Situation | What to do |
+|-----------|------------|
+| Implement follow-ups on the **same** unfinished job / PR | Resume: pass `agent_id` or `continue_session=true` |
+| Fresh review after new commits | **New** agent (do not resume an old review session) |
+| Plan → implement | Usually **new** implement agent; paste plan into the prompt |
+| Different kind (`plan` / `review` / `implement`) | Separate stored ids — resume does not cross kinds |
+
+Stored resume id is keyed by **`repo_url` + kind** (`cloud-plan` / `cloud-review` /
+`cloud-implement`), not by PR number or branch. Pushing commits does not
+auto-resume anything. Override with `agent_id` or env `CURSOR_HEADLESS_SDK_AGENT_ID`.
+
 `delivery=pr_review` runs the cloud review, then submits a real GitHub PR review
-via host `gh` auth (not the cloud-agent token): summary body plus inline comments
-on **Files changed** when possible. Supports multi-line ranges (`start_line` /
-`start_side`), file-level notes (`subject_type: file`), and applyable suggestions
-(```suggestion``` fences from a `suggestion` field). Comments are filtered to
-PR diff lines before POST; out-of-diff lines are dropped or appended to the summary.
+via host `gh` auth (not the cloud-agent token). Host needs `gh` logged in with
+repo access. Posts summary body plus inline comments on **Files changed** when
+possible. Supports multi-line ranges (`start_line` / `start_side`), file-level
+notes (`subject_type: file`), and applyable GitHub suggestion fences from a
+`suggestion` field. Comments are filtered to PR diff lines before POST;
+out-of-diff lines are dropped or appended to the summary.
 `review_event`: `COMMENT` | `REQUEST_CHANGES` | `APPROVE`. Default
 `delivery=findings` leaves results in the envelope only.
 
@@ -198,12 +216,12 @@ python3 "$PLUGIN_ROOT/skills/cursor-headless/scripts/cursor_headless.py" --cwd "
 
 ## Decision Path
 
-1. Ask/plan → pick Grok low|medium|high (default high); opt into Fast when latency matters. Root-cause analysis, multi-file reasoning, and test/fix design are Grok work even when read-only. Implement → `composer-2.5` by default; opt into Fast or escalate to Grok by complexity.
-2. `--mode ask` — one-shot advisory, no edits.
-3. `--mode plan` — read-only exploration / planning.
-4. `--mode default` — write-capable implementation only.
-5. Prefer `--worktree` for writes unless the user wants the current tree edited.
-6. Multi-step on the same task → `--continue-session` / `--resume` (faster than new sessions).
+1. Local vs cloud: tiny/local tree work → `cursor_ask` / `cursor_plan` / `cursor_implement`. Durable VM, remote-only repo, or open-a-PR jobs → `cursor_cloud_*` (`repo_url` + `CURSOR_API_KEY`).
+2. Ask/plan → pick Grok low|medium|high (default high); opt into Fast when latency matters. Root-cause analysis, multi-file reasoning, and test/fix design are Grok work even when read-only. Implement → `composer-2.5` by default; opt into Fast or escalate to Grok by complexity.
+3. Local modes: `--mode ask` (advisory), `--mode plan` (explore), `--mode default` (writes).
+4. Prefer `--worktree` for local writes unless the user wants the current tree edited.
+5. Cloud PR comments → `cursor_cloud_review(..., delivery="pr_review", pr_url=…)` (needs host `gh`). Envelope-only → `delivery="findings"`.
+6. Multi-step **same** local/cloud job → `continue_session` / `agent_id`. Fresh review or new feature → new agent (see Cloud session reuse).
 7. Skip repeated preflight after the first success (wrapper caches ~1h).
 8. **You (parent) set `timeout`** per call — see process below.
 
