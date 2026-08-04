@@ -46,8 +46,9 @@ Same MCP surface either way (`fast`, `model`, `worktree`, `continue_session`, �
 The plugin reads **only** process env `CURSOR_API_KEY`. It does not resolve
 Pass/1Password, and it does not hot-reload keys after MCP start.
 
-Mint a key at [Dashboard → API Keys](https://cursor.com/dashboard/api), then
-create the Codex desktop env file (this is what actually reaches MCP children):
+Mint a key at [Dashboard → API Keys](https://cursor.com/dashboard/api), then:
+
+1. Put it in the Codex desktop env file (secret stays out of `config.toml`):
 
 ```bash
 # macOS / Linux
@@ -60,15 +61,27 @@ CURSOR_API_KEY=crsr_…
 "@ | Set-Content -Path "$env:USERPROFILE\.codex\.env" -Encoding utf8
 ```
 
-**Fully quit and reopen** the Codex desktop app. A new chat is not enough.
-Saving `config.toml` or `.env` after MCP has already spawned leaves SDK with an
-empty key until restart.
+2. Whitelist forwarding into this plugin’s MCP process. Plugin **≥ 0.3.12**
+   ships `env_vars: ["CURSOR_API_KEY"]` in the Codex manifest. For older
+   installs (or to force it in user config):
+
+```toml
+[plugins."cursor-headless@cursor-headless".mcp_servers.cursor-headless]
+env_vars = ["CURSOR_API_KEY"]
+```
+
+Codex: `env` = literal values on the server; `env_vars` = names forwarded from
+the parent / `.env`. Without the whitelist, `.env` can be valid and MCP still
+sees an empty `CURSOR_API_KEY`.
+
+3. **Fully quit and reopen** the Codex desktop app. A new chat is not enough.
 
 | Do | Don’t |
 |----|--------|
-| Put `CURSOR_API_KEY=crsr_…` in `~/.codex/.env` | Rely on plugin `config.toml` MCP `env` alone (desktop often does not forward it) |
-| Restart Codex after creating/editing `.env` | Expect a running MCP server to pick up a key mid-session |
-| Use `backend="cli"` + `cursor-agent login` if you only need CLI | Commit `.env` or paste keys into chat |
+| `CURSOR_API_KEY=crsr_…` in `~/.codex/.env` | Put the secret in `mcp_servers.*.env` literals |
+| `env_vars = ["CURSOR_API_KEY"]` (plugin ≥ 0.3.12) | Assume `.env` alone reaches MCP without forwarding |
+| Restart Codex after `.env` / plugin updates | Expect a live MCP server to pick up a key mid-session |
+| `backend="cli"` + `cursor-agent login` if you only need CLI | Commit `.env` or paste keys into chat |
 
 **CLI-launched Codex / password managers:**
 
@@ -220,4 +233,4 @@ Parent owns the run; Cursor is a worker. Miss these and you get false failures o
 | **Cloud** | Needs `CURSOR_API_KEY` + GitHub `repo_url`. Use for unattended / PR work; resume via `agent_id` (`bc-…`). Local tools stay on `cwd`. |
 | **PR review delivery** | `cursor_cloud_review` with `delivery=pr_review` also needs **`gh`** authenticated on the **MCP host** (not the cloud VM). Posted top comment is titled **## Cursor cloud PR review** with model/elapsed/tokens in a collapsed `<details>` block; envelope may add `delivery`, `review_url`, `review_id`, and `usage`. |
 | **Progress** | MCP uses `stream-json` + `notifications/progress` (when the host forwards them). Every run returns an envelope with `job_id` + `progress_summary`. Long `cursor_*` tools run off the MCP request thread (`asyncio.to_thread`), so parallel `cursor_status(job_id)` polls can answer while a job is in flight. |
-| **SDK key** | Codex desktop: put `CURSOR_API_KEY` in `~/.codex/.env`, then fully restart the app. Config edits do not hot-reload into a live MCP process (see [Configure `CURSOR_API_KEY`](#configure-cursor_api_key-codex-desktop)). |
+| **SDK key** | Codex desktop: `CURSOR_API_KEY` in `~/.codex/.env` **and** `env_vars = ["CURSOR_API_KEY"]` (plugin ≥ 0.3.12), then fully restart. `.env` alone is not enough if forwarding is missing (see [Configure `CURSOR_API_KEY`](#configure-cursor_api_key-codex-desktop)). |

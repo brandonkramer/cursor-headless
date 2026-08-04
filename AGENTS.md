@@ -71,8 +71,8 @@ SDK is lazy-imported — CLI-only installs stay working without a key.
 The plugin reads **only** `os.environ["CURSOR_API_KEY"]` inside the MCP server.
 It does not call Pass/1Password, and it does not re-read `config.toml` after start.
 
-**Preferred (Codex desktop):** put the key in the desktop env file so MCP children
-inherit it at launch:
+**Preferred (Codex desktop):** put the key in the desktop env file, whitelist
+forwarding into MCP, then restart:
 
 ```text
 # macOS / Linux
@@ -89,20 +89,30 @@ CURSOR_API_KEY=crsr_…
 Mint at [Dashboard → API Keys](https://cursor.com/dashboard/api). Never commit
 `.env`. Never print the key. `chmod 600` on POSIX.
 
-Then **fully quit and reopen** the Codex desktop app (not just a new chat).
-Saving `config.toml` or editing `.env` does **not** update already-running
-Codex/MCP processes. MCP often starts seconds after the app; if the key is
-added after that spawn, SDK still sees an empty env until restart.
+Codex distinguishes **`env`** (literal values set on the server) from
+**`env_vars`** (names forwarded from the parent / `.env`). This plugin’s
+manifest sets UTF-8 via `env` and whitelists `CURSOR_API_KEY` via `env_vars`.
+If an older install lacks that whitelist, add:
 
-**Also useful, but not sufficient alone on current desktop:**
+```toml
+[plugins."cursor-headless@cursor-headless".mcp_servers.cursor-headless]
+env_vars = ["CURSOR_API_KEY"]
+```
+
+Then **fully quit and reopen** the Codex desktop app (not just a new chat).
+Saving `config.toml` / `.env` does **not** update already-running Codex/MCP
+processes.
+
+**Also useful:**
 
 | Mechanism | Notes |
 |-----------|--------|
-| `~/.codex/.env` | **Use this** for Codex desktop process env |
-| User/OS env `CURSOR_API_KEY` | Helps new shells / relaunches; still restart Codex |
-| `[plugins."cursor-headless@cursor-headless".mcp_servers.cursor-headless.env]` in `config.toml` | May **not** be forwarded into the MCP process on Codex desktop — do not rely on it |
-| Plugin manifest `env` (`PYTHONUTF8`, …) | Does not include the API key (by design) |
-| `pass-cli run --env-file … -- codex` | Fine for CLI-launched Codex; desktop still wants `.env` |
+| `~/.codex/.env` | Holds the secret for Codex desktop |
+| Plugin / config `env_vars = ["CURSOR_API_KEY"]` | **Required** so desktop forwards `.env` into this MCP subprocess |
+| User/OS env `CURSOR_API_KEY` | Helps CLI shells; still restart Codex for desktop MCP |
+| `mcp_servers.*.env` with a literal key | Avoid — keeps secrets in `config.toml`; desktop may ignore plugin `env` overrides anyway |
+| Plugin manifest `env` (`PYTHONUTF8`, …) | Non-secrets only |
+| `pass-cli run --env-file … -- codex` | Fine for CLI-launched Codex; desktop still wants `.env` + `env_vars` |
 
 **CLI-launched hosts / password managers:**
 
@@ -116,9 +126,8 @@ Bare `pass://` in plugin JSON is not resolved.
 
 **Diagnose SDK “key missing”:**
 
-1. Confirm `~/.codex/.env` (or `%USERPROFILE%\.codex\.env`) has a `crsr_…` line
-2. Confirm a **new** shell sees the key only if you also set User/OS env — MCP
-   cares about the Codex-launched process, not your SSH session
+1. Confirm `~/.codex/.env` has a `crsr_…` line
+2. Confirm `env_vars` includes `CURSOR_API_KEY` (plugin ≥ 0.3.12 or config override)
 3. Fully restart Codex desktop, then retry `cursor_ask` (auto or `backend="sdk"`)
 4. If you only need workers now: `backend="cli"` after `cursor-agent login`
 

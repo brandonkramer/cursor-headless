@@ -1,6 +1,6 @@
 {
   "name": "cursor-headless",
-  "version": "0.3.11",
+  "version": "0.3.12",
   "description": "Delegate to Cursor Agent from Claude Code or Codex via MCP (ask/plan/implement + cloud plan/review/implement). Claude workflows + /cursor-loop; slash commands for both hosts.",
   "license": "MIT",
   "keywords": ["cursor", "cursor-agent", "composer", "grok", "orchestration", "claude"],
@@ -23,6 +23,7 @@
       "cwd": ".",
       "startup_timeout_sec": 120,
       "tool_timeout_sec": 1800,
+      "env_vars": ["CURSOR_API_KEY"],
       "env": {
         "PYTHONUTF8": "1",
         "PYTHONIOENCODING": "utf-8"

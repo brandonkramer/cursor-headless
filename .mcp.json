@@ -12,6 +12,7 @@
       "python",
       "${CLAUDE_PLUGIN_ROOT}/src/cursor_headless_mcp.py"
     ],
+    "env_vars": ["CURSOR_API_KEY"],
     "env": {
       "PYTHONUTF8": "1",
       "PYTHONIOENCODING": "utf-8"
