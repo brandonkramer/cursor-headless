@@ -212,9 +212,28 @@ def cursor_agent_bin() -> str:
     raise SystemExit("cursor-agent executable not found on PATH.")
 
 
+def wrap_agent_cmd(argv: list[str]) -> list[str]:
+    """Run Windows .cmd/.bat agent shims under cmd.exe so piped stdout is captured.
+
+    CreateProcess on a bare ``*.cmd`` often yields empty stdout/stderr under
+    ``capture_output=True`` even when the same command prints fine in PowerShell.
+    """
+    if os.name != "nt" or not argv:
+        return argv
+    exe = str(argv[0])
+    if not exe.lower().endswith((".cmd", ".bat")):
+        return argv
+    return ["cmd.exe", "/d", "/s", "/c", subprocess.list2cmdline(argv)]
+
+
+def combined_output(proc: subprocess.CompletedProcess[str]) -> str:
+    """Merge stdout+stderr (cursor-agent may print catalog / login on either)."""
+    return f"{proc.stdout or ''}{proc.stderr or ''}"
+
+
 def run_quiet(cmd: list[str], timeout: float = 60.0) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        cmd,
+        wrap_agent_cmd(cmd),
         capture_output=True,
         check=False,
         timeout=timeout,
@@ -254,6 +273,12 @@ def write_preflight_cache(*, version: str, status_ok: bool, models_text: str) ->
     PREFLIGHT_CACHE.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def model_listed_in_catalog(model: str, models_text: str) -> bool:
+    if model in models_text:
+        return True
+    return any(model in ln for ln in models_text.splitlines())
+
+
 def ensure_preflight(model: str, *, force: bool, skip: bool) -> None:
     if skip:
         return
@@ -265,9 +290,18 @@ def ensure_preflight(model: str, *, force: bool, skip: bool) -> None:
     status = run_quiet([agent, "status"])
     models = run_quiet([agent, "models"], timeout=120.0)
 
-    status_ok = status.returncode == 0 and "Logged in" in (status.stdout + status.stderr)
-    models_text = models.stdout or ""
-    if model not in models_text and not any(model in ln for ln in models_text.splitlines()):
+    status_text = combined_output(status)
+    models_text = combined_output(models)
+    status_ok = status.returncode == 0 and "Logged in" in status_text
+
+    if not models_text.strip():
+        raise SystemExit(
+            f"`cursor-agent models` produced no captured output "
+            f"(exit {models.returncode}, agent={agent!r}). "
+            "On Windows this is usually a .cmd capture issue — update cursor-headless "
+            "or pass --skip-preflight."
+        )
+    if not model_listed_in_catalog(model, models_text):
         raise SystemExit(
             f"Requested model {model!r} not listed by `cursor-agent models`. "
             "Check account access or pick composer-2.5 / cursor-grok-4.5-high."
@@ -276,7 +310,11 @@ def ensure_preflight(model: str, *, force: bool, skip: bool) -> None:
         raise SystemExit(
             "cursor-agent is not authenticated. Run `cursor-agent login` or set CURSOR_API_KEY."
         )
-    write_preflight_cache(version=version.stdout or "", status_ok=status_ok, models_text=models_text)
+    write_preflight_cache(
+        version=combined_output(version) or (version.stdout or ""),
+        status_ok=status_ok,
+        models_text=models_text,
+    )
 
 
 def should_stage_task_file(prompt: str, *, force_inline: bool) -> bool:
@@ -357,7 +395,7 @@ def build_command(args: argparse.Namespace, prompt: str, model: str) -> list[str
         cmd.append("--continue")
 
     cmd.append(prompt)
-    return cmd
+    return wrap_agent_cmd(cmd)
 
 
 def summarize_json(stdout: str, *, pretty: bool) -> str:
