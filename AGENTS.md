@@ -54,17 +54,73 @@ Resolution order:
 
 1. Per-call MCP `backend="cli"|"sdk"`
 2. Env `CURSOR_HEADLESS_BACKEND=cli|sdk`
-3. **Auto:** `sdk` if `CURSOR_API_KEY` is set, else `cli`
+3. **Auto:** `sdk` if `CURSOR_API_KEY` is set **in the MCP process env**, else `cli`
 
 | Backend | Requires | Notes |
 |---------|----------|-------|
-| `cli` | `cursor-agent` on PATH | Default when no API key; stream-json progress |
-| `sdk` | `CURSOR_API_KEY` | MCP uv includes `cursor-sdk`; auto when key set |
+| `cli` | `cursor-agent` on PATH (login) | Works without API key; stream-json progress |
+| `sdk` | `CURSOR_API_KEY` in MCP process | MCP uv includes `cursor-sdk`; auto when key set |
 
 Windows: `sdk_bridge_patch` replaces upstream Bridge `selectors.select` discovery
 (WinError 10038) with a sleep-poll drain so live SDK works.
 
 SDK is lazy-imported — CLI-only installs stay working without a key.
+
+### `CURSOR_API_KEY` for Codex desktop (SDK)
+
+The plugin reads **only** `os.environ["CURSOR_API_KEY"]` inside the MCP server.
+It does not call Pass/1Password, and it does not re-read `config.toml` after start.
+
+**Preferred (Codex desktop):** put the key in the desktop env file so MCP children
+inherit it at launch:
+
+```text
+# macOS / Linux
+~/.codex/.env
+
+# Windows
+%USERPROFILE%\.codex\.env
+```
+
+```dotenv
+CURSOR_API_KEY=crsr_…
+```
+
+Mint at [Dashboard → API Keys](https://cursor.com/dashboard/api). Never commit
+`.env`. Never print the key. `chmod 600` on POSIX.
+
+Then **fully quit and reopen** the Codex desktop app (not just a new chat).
+Saving `config.toml` or editing `.env` does **not** update already-running
+Codex/MCP processes. MCP often starts seconds after the app; if the key is
+added after that spawn, SDK still sees an empty env until restart.
+
+**Also useful, but not sufficient alone on current desktop:**
+
+| Mechanism | Notes |
+|-----------|--------|
+| `~/.codex/.env` | **Use this** for Codex desktop process env |
+| User/OS env `CURSOR_API_KEY` | Helps new shells / relaunches; still restart Codex |
+| `[plugins."cursor-headless@cursor-headless".mcp_servers.cursor-headless.env]` in `config.toml` | May **not** be forwarded into the MCP process on Codex desktop — do not rely on it |
+| Plugin manifest `env` (`PYTHONUTF8`, …) | Does not include the API key (by design) |
+| `pass-cli run --env-file … -- codex` | Fine for CLI-launched Codex; desktop still wants `.env` |
+
+**CLI-launched hosts / password managers:**
+
+```bash
+# cursor.env — reference only (no secret in git)
+# CURSOR_API_KEY=pass://Keys/Cursor/password
+pass-cli run --env-file cursor.env -- codex
+```
+
+Bare `pass://` in plugin JSON is not resolved.
+
+**Diagnose SDK “key missing”:**
+
+1. Confirm `~/.codex/.env` (or `%USERPROFILE%\.codex\.env`) has a `crsr_…` line
+2. Confirm a **new** shell sees the key only if you also set User/OS env — MCP
+   cares about the Codex-launched process, not your SSH session
+3. Fully restart Codex desktop, then retry `cursor_ask` (auto or `backend="sdk"`)
+4. If you only need workers now: `backend="cli"` after `cursor-agent login`
 
 SDK parity vs CLI flags:
 

@@ -29,9 +29,8 @@ Parent owns **`timeout`** (default **1200s**, env `CURSOR_HEADLESS_TIMEOUT`; clo
 
 ## Cursor SDK (and CLI fallback)
 
-**SDK first:** set a Cursor user/service API key in the host environment and the
-plugin auto-selects the Python SDK backend (MCP already launches with
-`--with cursor-sdk`). No key → CLI (`cursor-agent`) automatically.
+**SDK first** when the MCP process has `CURSOR_API_KEY`; otherwise **CLI**
+(`cursor-agent`) automatically. MCP already launches with `--with cursor-sdk`.
 
 Same MCP surface either way (`fast`, `model`, `worktree`, `continue_session`, …).
 
@@ -39,19 +38,47 @@ Same MCP surface either way (`fast`, `model`, `worktree`, `continue_session`, �
 |-------|------|
 | 1 | Per-call `backend="sdk"\|"cli"` |
 | 2 | Env `CURSOR_HEADLESS_BACKEND` |
-| 3 | **Auto:** SDK when an API key is present, else CLI |
+| 3 | **Auto:** SDK when `CURSOR_API_KEY` is set **in the MCP process**, else CLI |
 
 | Backend | Needs | Notes |
 |---------|-------|-------|
-| **`sdk`** (preferred) | API key from [Dashboard → API Keys](https://cursor.com/dashboard/api) (`crsr_…` via env `CURSOR_API_KEY`) | Local agent via `cursor-sdk`; Fast via `ModelSelection` |
+| **`sdk`** (preferred) | `CURSOR_API_KEY` (`crsr_…`) in the MCP process env | Local agent via `cursor-sdk`; Fast via `ModelSelection` |
 | `cli` | `cursor-agent` on PATH (login) | Fallback; stream-json progress |
 
 **Fast:** MCP `fast=true` (or a `*-fast` model id) works on both. SDK maps to
 `ModelSelection` params (`fast=true|false`); CLI adds `--fast`. Grok CLI ids
 (`cursor-grok-4.5-{low,medium,high}`) become SDK `grok-4.5` + `effort=` + `fast=`.
 
-**API key from a password manager:** MCP only reads the key from process env.
-Inject with e.g. Proton Pass:
+### Configure `CURSOR_API_KEY` (Codex desktop)
+
+The plugin reads **only** process env `CURSOR_API_KEY`. It does not resolve
+Pass/1Password, and it does not hot-reload keys after MCP start.
+
+Mint a key at [Dashboard → API Keys](https://cursor.com/dashboard/api), then
+create the Codex desktop env file (this is what actually reaches MCP children):
+
+```bash
+# macOS / Linux
+printf 'CURSOR_API_KEY=crsr_…\n' > ~/.codex/.env
+chmod 600 ~/.codex/.env
+
+# Windows (PowerShell) — do not echo the key into chat/logs
+@"
+CURSOR_API_KEY=crsr_…
+"@ | Set-Content -Path "$env:USERPROFILE\.codex\.env" -Encoding utf8
+```
+
+**Fully quit and reopen** the Codex desktop app. A new chat is not enough.
+Saving `config.toml` or `.env` after MCP has already spawned leaves SDK with an
+empty key until restart.
+
+| Do | Don’t |
+|----|--------|
+| Put `CURSOR_API_KEY=crsr_…` in `~/.codex/.env` | Rely on plugin `config.toml` MCP `env` alone (desktop often does not forward it) |
+| Restart Codex after creating/editing `.env` | Expect a running MCP server to pick up a key mid-session |
+| Use `backend="cli"` + `cursor-agent login` if you only need CLI | Commit `.env` or paste keys into chat |
+
+**CLI-launched Codex / password managers:**
 
 ```bash
 # cursor.env — reference only (no secret in git)
@@ -59,11 +86,13 @@ Inject with e.g. Proton Pass:
 pass-cli run --env-file cursor.env -- codex   # or claude
 ```
 
-Bare `pass://` inside plugin JSON is not resolved — wrap the host or set a real env value.
+Bare `pass://` inside plugin JSON is not resolved — wrap the host or use a real
+value in `~/.codex/.env`.
 
 **Windows:** live SDK works via an in-process Bridge discovery patch (upstream
 `select()` / WinError 10038). Prefer MCP `cursor_*` over raw `cursor-agent` in a
-CP-1252 console.
+CP-1252 console. If SDK reports a missing key but `.env` looks correct, restart
+Codex before debugging the Bridge.
 
 ## Slash commands (Claude Code + Codex)
 
