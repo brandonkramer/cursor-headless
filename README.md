@@ -19,18 +19,6 @@ or `cursor-agent --print` (CLI fallback). Local `cursor_ask` / `cursor_plan` /
 
 Pass `model` explicitly: simple → `composer-2.5` (or `fast=true` / `*-fast` when latency matters); light → `cursor-grok-4.5-low`; medium → `…-medium`; hard → `…-high`.
 
-## Operating notes
-
-Parent owns the run; Cursor is a worker. Miss these and you get false failures or silent “no result.”
-
-| Topic | Rule |
-|-------|------|
-| **Timeout** | Parent owns `timeout` (default **1200s**, env `CURSOR_HEADLESS_TIMEOUT`; cloud can use `CURSOR_HEADLESS_CLOUD_TIMEOUT`). Raise for broad maps. On timeout treat as **no result** — narrow the slice or raise `timeout` and retry; do not invent findings. |
-| **Cloud** | Needs `CURSOR_API_KEY` + GitHub `repo_url`. Use for unattended / PR work; resume via `agent_id` (`bc-…`). Local tools stay on `cwd`. |
-| **PR review delivery** | `cursor_cloud_review` with `delivery=pr_review` also needs **`gh`** authenticated on the **MCP host** (not the cloud VM). Posted top comment is titled **## Cursor cloud PR review** with model/elapsed/tokens in a collapsed `<details>` block; envelope may add `delivery`, `review_url`, `review_id`, and `usage`. |
-| **Progress** | MCP uses `stream-json` + `notifications/progress` (when the host forwards them). Every run returns an envelope with `job_id` + `progress_summary`. Long `cursor_*` tools run off the MCP request thread (`asyncio.to_thread`), so parallel `cursor_status(job_id)` polls can answer while a job is in flight. |
-| **SDK key** | Codex desktop: put `CURSOR_API_KEY` in `~/.codex/.env`, then fully restart the app. Config edits do not hot-reload into a live MCP process (see [Configure `CURSOR_API_KEY`](#configure-cursor_api_key-codex-desktop)). |
-
 ## Cursor SDK (and CLI fallback)
 
 **SDK first** when the MCP process has `CURSOR_API_KEY`; otherwise **CLI**
@@ -221,3 +209,15 @@ misses bar     → Codex / gpt-5.6 (orchestrator), not a heavier Cursor frontier
 ```
 
 See `skills/cursor-headless/SKILL.md` for full routing.
+
+## Operating notes
+
+Parent owns the run; Cursor is a worker. Miss these and you get false failures or silent “no result.”
+
+| Topic | Rule |
+|-------|------|
+| **Timeout** | Parent owns `timeout` (default **1200s**, env `CURSOR_HEADLESS_TIMEOUT`; cloud can use `CURSOR_HEADLESS_CLOUD_TIMEOUT`). Raise for broad maps. On timeout treat as **no result** — narrow the slice or raise `timeout` and retry; do not invent findings. |
+| **Cloud** | Needs `CURSOR_API_KEY` + GitHub `repo_url`. Use for unattended / PR work; resume via `agent_id` (`bc-…`). Local tools stay on `cwd`. |
+| **PR review delivery** | `cursor_cloud_review` with `delivery=pr_review` also needs **`gh`** authenticated on the **MCP host** (not the cloud VM). Posted top comment is titled **## Cursor cloud PR review** with model/elapsed/tokens in a collapsed `<details>` block; envelope may add `delivery`, `review_url`, `review_id`, and `usage`. |
+| **Progress** | MCP uses `stream-json` + `notifications/progress` (when the host forwards them). Every run returns an envelope with `job_id` + `progress_summary`. Long `cursor_*` tools run off the MCP request thread (`asyncio.to_thread`), so parallel `cursor_status(job_id)` polls can answer while a job is in flight. |
+| **SDK key** | Codex desktop: put `CURSOR_API_KEY` in `~/.codex/.env`, then fully restart the app. Config edits do not hot-reload into a live MCP process (see [Configure `CURSOR_API_KEY`](#configure-cursor_api_key-codex-desktop)). |
